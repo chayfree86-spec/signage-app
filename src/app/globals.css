@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+:root {
+  --background: #000000;
+  --foreground: #ffffff;
+  --accent-yellow: #facc15;
+  --accent-yellow-glow: rgba(250, 204, 21, 0.15);
+  --glass-bg: rgba(15, 15, 17, 0.65);
+  --glass-border: rgba(63, 63, 70, 0.4);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-accent-yellow: var(--accent-yellow);
+  --font-sans: var(--font-geist-sans), Arial, sans-serif;
+}
+
+/* Base custom styles */
+body {
+  background-color: #000000;
+  color: #ffffff;
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+/* Custom premium scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #000000;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-yellow);
+}
+
+/* Glassmorphism custom classes */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+}
+
+.glass-panel:hover {
+  border-color: rgba(250, 204, 21, 0.25);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 15px var(--accent-yellow-glow);
+}
+
+.glass-card-active {
+  background: rgba(250, 204, 21, 0.05);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(250, 204, 21, 0.4);
+  box-shadow: 0 0 15px rgba(250, 204, 21, 0.1);
+}
+
+/* Pulse animation for screen ONLINE status */
+@keyframes pulse-glow {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  }
+  50% {
+    transform: scale(1.15);
+    box-shadow: 0 0 10px 4px rgba(34, 197, 94, 0.3);
+  }
+}
+
+.status-pulse {
+  animation: pulse-glow 2s infinite;
+}
+
+/* Ambient glow background spots */
+.glow-spot {
+  position: absolute;
+  width: 400px;
+  height: 400px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(250, 204, 21, 0.08) 0%, rgba(0, 0, 0, 0) 70%);
+  filter: blur(40px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Premium custom dropdown scrollbar override and options */
+select option {
+  background-color: #0c0c0e !important;
+  color: #ffffff !important;
+}
+
+select:focus option:checked {
+  background: #facc15 !important;
+  color: #000000 !important;
+}
+
+/* Premium fade-in and slide-up animation for dynamic tabs */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
