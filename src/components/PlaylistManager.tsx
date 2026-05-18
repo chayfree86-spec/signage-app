@@ -19,7 +19,9 @@ import {
   Play,
   RotateCw,
   FolderOpen,
-  Lock
+  Lock,
+  X,
+  ChevronDown
 } from 'lucide-react';
 import { 
   DndContext, 
@@ -57,6 +59,7 @@ interface SortablePlaylistMediaCardProps {
   onUpdateItemDetails: (id: string, name: string, slideDuration: number) => void;
   isSelected: boolean;
   onToggleSelect: (id: string, checked: boolean) => void;
+  onEditImage: (item: MediaItem) => void;
 }
 
 function SortablePlaylistMediaCard({ 
@@ -65,7 +68,8 @@ function SortablePlaylistMediaCard({
   onToggleActiveItem,
   onUpdateItemDetails,
   isSelected,
-  onToggleSelect
+  onToggleSelect,
+  onEditImage
 }: SortablePlaylistMediaCardProps) {
   const {
     attributes,
@@ -132,18 +136,28 @@ function SortablePlaylistMediaCard({
           />
         </div>
 
-        {/* Thumbnail preview */}
-        <div className="relative w-16 h-11 bg-black rounded-lg overflow-hidden border border-zinc-850 flex items-center justify-center shrink-0">
+        {/* Thumbnail preview with edit click handler */}
+        <div 
+          onClick={(e) => {
+            e.stopPropagation();
+            onEditImage(item);
+          }}
+          className="relative w-16 h-11 bg-black rounded-lg overflow-hidden border border-zinc-850 flex items-center justify-center shrink-0 cursor-pointer hover:border-yellow-500 hover:ring-2 hover:ring-yellow-500/20 transition-all group/thumb"
+          title="Click to Replace or Switch Media"
+        >
           {item.type === 'video' ? (
             <>
               <video src={item.url} className="w-full h-full object-cover" muted />
-              <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
+              <div className="absolute inset-0 bg-black/35 flex items-center justify-center group-hover/thumb:bg-black/10 transition-colors">
                 <Film size={12} className="text-yellow-500" />
               </div>
             </>
           ) : (
-            <img src={item.url} alt={item.name} className="w-full h-full object-cover" />
+            <img src={item.url} alt={item.name} className="w-full h-full object-cover group-hover/thumb:scale-105 transition-transform" />
           )}
+          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition-opacity">
+            <RotateCw size={12} className="text-yellow-500 animate-spin-slow" />
+          </div>
         </div>
 
         {/* Info */}
@@ -405,6 +419,9 @@ export default function PlaylistManager({
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   
+  // Custom media visual editor modal state
+  const [editingItem, setEditingItem] = useState<MediaItem | null>(null);
+  
   // Clear selection state when switching playlists
   useEffect(() => {
     setSelectedItemIds([]);
@@ -418,6 +435,7 @@ export default function PlaylistManager({
   const [isUploading, setIsUploading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const replaceFileInputRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef(0);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
 
@@ -426,6 +444,116 @@ export default function PlaylistManager({
 
   // Find currently managed playlist
   const managedPlaylist = playlists.find(p => p.id === selectedPlaylistId);
+
+  // Duration dropdown toggle state
+  const [durationDropdownOpen, setDurationDropdownOpen] = useState(false);
+
+  // Helper function to update fields on local editingItem state
+  const updateEditingField = (key: keyof MediaItem, value: any) => {
+    if (!editingItem) return;
+    setEditingItem({
+      ...editingItem,
+      [key]: value
+    });
+  };
+
+  // Save the edited visual values back to the playlist database state
+  const handleSaveMediaEdits = (updatedItem: MediaItem) => {
+    if (!selectedPlaylistId || !managedPlaylist) return;
+
+    const updatedItems = managedPlaylist.items.map(it => {
+      if (it.id === updatedItem.id) {
+        return updatedItem;
+      }
+      return it;
+    });
+
+    const updatedPlaylists = playlists.map(p => {
+      if (p.id === selectedPlaylistId) {
+        return {
+          ...p,
+          items: updatedItems
+        };
+      }
+      return p;
+    });
+
+    onPlaylistsChange(updatedPlaylists);
+    setEditingItem(null);
+  };
+
+  // Helper for computing image styles in modal preview
+  const getEditingMediaStyle = (): React.CSSProperties => {
+    if (!editingItem) return {};
+    const filters = [];
+    if (editingItem.brightness !== undefined) filters.push(`brightness(${editingItem.brightness}%)`);
+    if (editingItem.contrast !== undefined) filters.push(`contrast(${editingItem.contrast}%)`);
+    if (editingItem.grayscale !== undefined) filters.push(`grayscale(${editingItem.grayscale}%)`);
+    if (editingItem.blur !== undefined) filters.push(`blur(${editingItem.blur}px)`);
+
+    const transform = editingItem.rotation ? `rotate(${editingItem.rotation}deg)` : '';
+
+    return {
+      filter: filters.join(' ') || undefined,
+      transform: transform || undefined,
+      transition: 'filter 0.2s ease, transform 0.2s ease',
+    };
+  };
+
+  const getEditingScaleModeClass = () => {
+    if (!editingItem) return '';
+    switch (editingItem.scale_mode) {
+      case 'contain':
+        return 'object-contain';
+      case 'stretch':
+        return 'object-fill';
+      case 'cover':
+      default:
+        return 'object-cover';
+    }
+  };
+
+  const getEditingOverlayPositionClass = () => {
+    if (!editingItem) return '';
+    switch (editingItem.overlay_text_position) {
+      case 'top':
+        return 'top-6 left-1/2 -translate-x-1/2';
+      case 'middle':
+        return 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2';
+      case 'bottom':
+      default:
+        return 'bottom-6 left-1/2 -translate-x-1/2';
+    }
+  };
+
+  const getEditingOverlayTextColorClass = () => {
+    if (!editingItem) return '';
+    switch (editingItem.overlay_text_color) {
+      case 'yellow':
+        return 'text-yellow-400 border-yellow-500/30 bg-black/85';
+      case 'green':
+        return 'text-emerald-400 border-emerald-500/30 bg-black/85';
+      case 'red':
+        return 'text-red-400 border-red-500/30 bg-black/85';
+      case 'cyan':
+        return 'text-cyan-400 border-cyan-500/30 bg-black/85';
+      case 'white':
+      default:
+        return 'text-white border-zinc-800 bg-black/80';
+    }
+  };
+
+  const durationOptions = [
+    { value: 3, label: '3 Seconds (Fast)' },
+    { value: 5, label: '5 Seconds' },
+    { value: 8, label: '8 Seconds (Default)' },
+    { value: 10, label: '10 Seconds' },
+    { value: 15, label: '15 Seconds' },
+    { value: 20, label: '20 Seconds' },
+    { value: 30, label: '30 Seconds (Slower)' },
+    { value: 45, label: '45 Seconds' },
+    { value: 60, label: '60 Seconds (Slow)' }
+  ];
 
   // Setup sensors for DND list
   const sensors = useSensors(
@@ -600,6 +728,51 @@ export default function PlaylistManager({
       return p;
     });
     onPlaylistsChange(updated);
+  };
+
+  const handleReplacePlaylistItem = (newAsset: MediaItem) => {
+    if (!selectedPlaylistId || !managedPlaylist || !editingItem) return;
+
+    const updatedItems = managedPlaylist.items.map(it => {
+      if (it.id === editingItem.id) {
+        return {
+          ...newAsset,
+          position: it.position,
+          slide_duration: it.slide_duration || newAsset.slide_duration || 8
+        };
+      }
+      return it;
+    });
+
+    const updatedPlaylists = playlists.map(p => {
+      if (p.id === selectedPlaylistId) {
+        return {
+          ...p,
+          items: updatedItems
+        };
+      }
+      return p;
+    });
+
+    onPlaylistsChange(updatedPlaylists);
+    setEditingItem(null);
+  };
+
+  const handleUploadAndReplacePlaylistItem = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedPlaylistId || !managedPlaylist || !editingItem || !e.target.files || e.target.files.length === 0) return;
+
+    setIsUploading(true);
+    setErrorMsg('');
+    try {
+      const file = e.target.files[0];
+      const newMedia = await uploadMediaItem(file);
+      await onReloadUploadedMedia();
+      handleReplacePlaylistItem(newMedia);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error replacing with uploaded file');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   // Drag End handler for sorting inside playlist
@@ -789,13 +962,6 @@ export default function PlaylistManager({
                   className="flex-1 md:flex-none px-4 py-2.5 rounded-xl border border-zinc-900 text-zinc-450 hover:bg-zinc-900/50 text-xs font-bold cursor-pointer transition-colors"
                 >
                   Cancel
-                </button>
-                <button
-                  onClick={handleCreatePlaylist}
-                  disabled={!newPlaylistName.trim()}
-                  className="flex-1 md:flex-none px-4 py-2.5 rounded-xl bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 text-black text-xs font-bold cursor-pointer transition-all shadow-[0_0_15px_rgba(250,204,21,0.2)]"
-                >
-                  Create
                 </button>
               </div>
             </div>
@@ -1215,12 +1381,203 @@ export default function PlaylistManager({
                           onUpdateItemDetails={handleUpdateItemDetails}
                           isSelected={selectedItemIds.includes(item.id)}
                           onToggleSelect={handleToggleSelectItem}
+                          onEditImage={setEditingItem}
                         />
                       ))}
                     </div>
                   </SortableContext>
                 </DndContext>
               )}
+
+            </div>
+          </div>
+        </div>
+      )}      {/* ----------------------------------------------------
+          REPLACE MEDIA ITEM MODAL (THUMBNAIL CLICK)
+          ---------------------------------------------------- */}
+      {editingItem && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-6 bg-black/80 backdrop-blur-md animate-fadeIn">
+          {/* Modal Card */}
+          <div className="relative w-full max-w-4xl bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-[0_24px_50px_rgba(0,0,0,0.8)] flex flex-col md:flex-row max-h-[90vh] md:max-h-[85vh] animate-scaleUp">
+            
+            {/* Left Column: Current Media Details & Upload New Option */}
+            <div className="w-full md:w-1/2 bg-black flex flex-col justify-between relative border-r border-zinc-850 p-6 min-h-[300px] md:min-h-[450px]">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-widest text-yellow-500 mb-2 block">
+                  Current Playback Item
+                </span>
+                <h3 className="font-extrabold text-white text-lg uppercase tracking-wider mb-4">
+                  Selected Item Info
+                </h3>
+
+                {/* Preview Canvas Container */}
+                <div className="w-full h-48 relative overflow-hidden flex items-center justify-center rounded-2xl bg-zinc-950 border border-zinc-900 mb-4 group/preview">
+                  {editingItem.type === 'video' ? (
+                    <video
+                      src={editingItem.url}
+                      className="w-full h-full object-cover"
+                      muted
+                      autoPlay
+                      loop
+                      playsInline
+                    />
+                  ) : (
+                    <img
+                      src={editingItem.url}
+                      alt={editingItem.name}
+                      className="w-full h-full object-cover"
+                    />
+                  )}
+                  
+                  <div className="absolute inset-0 bg-black/40 flex items-end p-3">
+                    <span className="px-2 py-0.5 rounded bg-yellow-500 text-black text-[9px] font-black uppercase tracking-wider">
+                      {editingItem.type}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Details list */}
+                <div className="space-y-2 bg-zinc-950/80 p-3.5 rounded-2xl border border-zinc-900">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-zinc-500 font-medium">Name:</span>
+                    <span className="text-zinc-200 font-bold truncate max-w-[200px]" title={editingItem.name}>
+                      {editingItem.name}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-zinc-500 font-medium">Slot Duration:</span>
+                    <span className="text-yellow-500 font-bold font-mono">
+                      {editingItem.slide_duration || 8} seconds
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-zinc-500 font-medium">Type:</span>
+                    <span className="text-zinc-350 font-bold uppercase font-mono">{editingItem.type}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Upload New & Replace trigger */}
+              <div className="mt-6 pt-4 border-t border-zinc-900">
+                <input
+                  type="file"
+                  ref={replaceFileInputRef}
+                  onChange={handleUploadAndReplacePlaylistItem}
+                  className="hidden"
+                  accept="image/*,video/*"
+                />
+                <button
+                  type="button"
+                  onClick={() => replaceFileInputRef.current?.click()}
+                  className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-yellow-500 hover:bg-yellow-400 text-black text-xs font-black uppercase tracking-widest shadow-lg shadow-yellow-500/10 hover:shadow-yellow-500/20 cursor-pointer transition-all active:scale-98"
+                >
+                  <Plus size={14} className="stroke-[2.5]" />
+                  <span>Upload & Replace</span>
+                </button>
+                <p className="text-[10px] text-zinc-500 text-center mt-2 uppercase tracking-wider font-medium">
+                  Directly choose a new image/video from your device
+                </p>
+              </div>
+            </div>
+
+            {/* Right Column: Library Selector */}
+            <div className="w-full md:w-1/2 flex flex-col justify-between bg-zinc-900/40 max-h-[50vh] md:max-h-[85vh]">
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-zinc-850 flex items-center justify-between shrink-0">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[10px] font-black text-yellow-500 uppercase tracking-widest">
+                    Media Library
+                  </span>
+                  <h3 className="font-extrabold text-white text-[13.5px] uppercase tracking-wider">
+                    Select Replacement Item
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setEditingItem(null)}
+                  className="p-1.5 rounded-lg bg-zinc-950 hover:bg-zinc-850 border border-zinc-850 text-zinc-450 hover:text-white cursor-pointer transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              {/* Body: Scrollable Library Files */}
+              <div className="flex-1 p-6 overflow-y-auto space-y-3.5 pr-2.5 scrollbar-thin">
+                {allUploadedMedia.length === 0 ? (
+                  <div className="py-16 text-center text-zinc-500 text-xs select-none">
+                    No files found in your Asset Library.
+                  </div>
+                ) : (
+                  allUploadedMedia.map((asset) => {
+                    const isCurrent = asset.id === editingItem.id || asset.url === editingItem.url;
+                    return (
+                      <div
+                        key={asset.id}
+                        onClick={() => !isCurrent && handleReplacePlaylistItem(asset)}
+                        className={`group/asset flex items-center gap-3.5 p-3 rounded-2xl border transition-all ${
+                          isCurrent 
+                            ? 'bg-yellow-500/5 border-yellow-500/30 cursor-default' 
+                            : 'bg-zinc-950/40 border-zinc-900/60 hover:border-yellow-500/20 hover:bg-zinc-950/80 cursor-pointer'
+                        }`}
+                      >
+                        {/* Thumbnail */}
+                        <div className="relative w-16 h-12 bg-black rounded-xl overflow-hidden shrink-0 border border-zinc-900">
+                          {asset.type === 'video' ? (
+                            <video src={asset.url} className="w-full h-full object-cover" muted />
+                          ) : (
+                            <img src={asset.url} alt={asset.name} className="w-full h-full object-cover" />
+                          )}
+                          {isCurrent && (
+                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                              <Check size={14} className="text-yellow-500" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Name and specs */}
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-bold truncate ${isCurrent ? 'text-yellow-500' : 'text-zinc-200 group-hover/asset:text-white'}`}>
+                            {asset.name}
+                          </p>
+                          <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">
+                            {asset.type} • {asset.size > 0 ? `${(asset.size / (1024 * 1024)).toFixed(2)} MB` : 'N/A'}
+                          </p>
+                        </div>
+
+                        {/* Choose / Current indicator */}
+                        <div className="shrink-0">
+                          {isCurrent ? (
+                            <span className="text-[9px] font-black uppercase tracking-wider text-yellow-500 px-2 py-1 rounded bg-yellow-500/10">
+                              Active
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleReplacePlaylistItem(asset);
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-[10px] font-black uppercase tracking-widest text-zinc-400 group-hover/asset:bg-yellow-500 group-hover/asset:border-yellow-500 group-hover/asset:text-black transition-all cursor-pointer"
+                            >
+                              Choose
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Action Buttons Footer */}
+              <div className="px-6 py-4 border-t border-zinc-850 bg-zinc-950/40 flex items-center justify-end gap-3.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setEditingItem(null)}
+                  className="px-5 py-2.5 rounded-xl border border-zinc-850 text-xs font-bold text-zinc-350 hover:text-white hover:bg-zinc-850 cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
 
             </div>
           </div>

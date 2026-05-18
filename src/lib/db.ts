@@ -11,6 +11,15 @@ export interface MediaItem {
   slide_duration?: number; // Custom duration override (in seconds)
   created_at: string;
   localBlob?: Blob; // Dynamic blob for local fallback URL regeneration
+  scale_mode?: 'cover' | 'contain' | 'stretch';
+  brightness?: number;
+  contrast?: number;
+  grayscale?: number;
+  blur?: number;
+  rotation?: number;
+  overlay_text?: string;
+  overlay_text_color?: string;
+  overlay_text_position?: 'top' | 'middle' | 'bottom';
 }
 
 export interface Playlist {
@@ -160,8 +169,8 @@ const activeBlobUrls = new Map<string, string>();
 
 function makeBlobUrl(id: string, blob: Blob): string {
   if (activeBlobUrls.has(id)) {
-    // Revoke old URL to free memory
-    URL.revokeObjectURL(activeBlobUrls.get(id)!);
+    // Reuse existing Blob URL to prevent revoking URLs still in use by other components
+    return activeBlobUrls.get(id)!;
   }
   const url = URL.createObjectURL(blob);
   activeBlobUrls.set(id, url);

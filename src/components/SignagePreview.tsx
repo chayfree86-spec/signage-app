@@ -56,6 +56,63 @@ export default function SignagePreview({
 
   const youtubeId = getYouTubeId(settings.youtube_url);
 
+  // Helper functions for custom image editing features
+  const getMediaStyle = (item: MediaItem): React.CSSProperties => {
+    const filters = [];
+    if (item.brightness !== undefined) filters.push(`brightness(${item.brightness}%)`);
+    if (item.contrast !== undefined) filters.push(`contrast(${item.contrast}%)`);
+    if (item.grayscale !== undefined) filters.push(`grayscale(${item.grayscale}%)`);
+    if (item.blur !== undefined) filters.push(`blur(${item.blur}px)`);
+
+    const transform = item.rotation ? `rotate(${item.rotation}deg)` : '';
+
+    return {
+      filter: filters.join(' ') || undefined,
+      transform: transform || undefined,
+      transition: 'filter 0.3s ease, transform 0.3s ease',
+    };
+  };
+
+  const getScaleModeClass = (item: MediaItem) => {
+    switch (item.scale_mode) {
+      case 'contain':
+        return 'object-contain';
+      case 'stretch':
+        return 'object-fill';
+      case 'cover':
+      default:
+        return 'object-cover';
+    }
+  };
+
+  const getOverlayPositionClass = (item: MediaItem) => {
+    switch (item.overlay_text_position) {
+      case 'top':
+        return 'top-8 left-1/2 -translate-x-1/2';
+      case 'middle':
+        return 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2';
+      case 'bottom':
+      default:
+        return 'bottom-12 left-1/2 -translate-x-1/2';
+    }
+  };
+
+  const getOverlayTextColorClass = (color?: string) => {
+    switch (color) {
+      case 'yellow':
+        return 'text-yellow-400 border-yellow-500/30 bg-black/85';
+      case 'green':
+        return 'text-emerald-400 border-emerald-500/30 bg-black/85';
+      case 'red':
+        return 'text-red-400 border-red-500/30 bg-black/85';
+      case 'cyan':
+        return 'text-cyan-400 border-cyan-500/30 bg-black/85';
+      case 'white':
+      default:
+        return 'text-white border-zinc-800 bg-black/80';
+    }
+  };
+
   // ----------------------------------------------------
   // CAROUSEL LOOP LOGIC FOR IMAGES & VIDEOS
   // ----------------------------------------------------
@@ -149,15 +206,24 @@ export default function SignagePreview({
               autoPlay
               muted={settings.mute}
               onEnded={handleVideoEnded}
-              className="w-full h-full object-cover"
+              className={`w-full h-full ${getScaleModeClass(currentItem)}`}
+              style={getMediaStyle(currentItem)}
               playsInline
             />
           ) : (
             <img
               src={currentItem.url}
               alt={currentItem.name}
-              className="w-full h-full object-cover"
+              className={`w-full h-full ${getScaleModeClass(currentItem)}`}
+              style={getMediaStyle(currentItem)}
             />
+          )}
+
+          {/* Premium customized visual text overlay */}
+          {currentItem.overlay_text && currentItem.overlay_text.trim() !== '' && (
+            <div className={`absolute ${getOverlayPositionClass(currentItem)} z-10 px-5 py-2.5 rounded-2xl border text-center font-bold tracking-wide shadow-2xl backdrop-blur-md animate-pulse text-xs md:text-sm max-w-[85%] select-none ${getOverlayTextColorClass(currentItem.overlay_text_color)}`}>
+              {currentItem.overlay_text}
+            </div>
           )}
 
           {/* Media Info overlay bar (shows subtle active title on signage) */}
