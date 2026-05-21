@@ -305,15 +305,15 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({
   return (
     <div
       onClick={onSelect}
-      className={`group glass-panel rounded-2xl p-4 border transition-all duration-500 flex flex-col justify-between aspect-square cursor-pointer hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(250,204,21,0.06)] hover:border-yellow-500/20 ${
+      className={`group glass-panel rounded-2xl p-2.5 border transition-all duration-500 flex flex-col justify-between h-full min-h-[195px] cursor-pointer hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(250,204,21,0.06)] hover:border-yellow-500/20 ${
         playlist.is_online 
           ? 'border-yellow-500/35 shadow-[0_0_20px_rgba(250,204,21,0.04)] bg-zinc-900/55' 
           : 'border-zinc-900 hover:border-zinc-800 hover:bg-zinc-900/10'
       }`}
     >
-      <div className="flex flex-col gap-3 min-h-0">
+      <div className="flex flex-col gap-2 min-h-0">
         {/* Aspect Ratio Box with Auto Image Slide */}
-        <div className="relative overflow-hidden aspect-[1.65] rounded-xl border border-zinc-950/60 bg-zinc-950/80 group-hover:border-zinc-800/80 transition-colors shrink-0">
+        <div className="relative overflow-hidden aspect-[1.8] rounded-xl border border-zinc-950/60 bg-zinc-950/80 group-hover:border-zinc-800/80 transition-colors shrink-0">
           {slideshowItems.length > 0 ? (
             slideshowItems.map((item, idx) => (
               item.type === 'video' ? (
@@ -340,20 +340,20 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({
               )
             ))
           ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-zinc-950 to-zinc-900/50 text-zinc-600 p-3 select-none">
-              <ImageIcon size={18} className="text-zinc-850 mb-1" />
-              <span className="text-[8.5px] uppercase font-bold tracking-wider text-zinc-650">No active files</span>
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-zinc-950 to-zinc-900/50 text-zinc-650 p-2 select-none">
+              <ImageIcon size={14} className="text-zinc-850 mb-0.5" />
+              <span className="text-[7.5px] uppercase font-bold tracking-wider text-zinc-650">No active files</span>
             </div>
           )}
 
           {/* Dot progress indicator */}
           {slideshowItems.length > 1 && (
-            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1 z-10">
+            <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-0.5 z-10">
               {slideshowItems.map((_, idx) => (
                 <div
                   key={idx}
-                  className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
-                    idx === currentIndex ? 'bg-yellow-500 w-3' : 'bg-zinc-850'
+                  className={`w-1 h-1 rounded-full transition-all duration-300 ${
+                    idx === currentIndex ? 'bg-yellow-500 w-2.5' : 'bg-zinc-850'
                   }`}
                 />
               ))}
@@ -361,23 +361,26 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({
           )}
 
           {/* Media overlay count badge */}
-          <div className="absolute top-2 left-2 px-2 py-0.5 rounded-lg bg-black/60 border border-zinc-800/50 backdrop-blur-sm text-[8px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1 select-none">
-            <Film size={8.5} className="text-yellow-500" />
+          <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/60 border border-zinc-800/50 backdrop-blur-sm text-[7.5px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-0.5 select-none">
+            <Film size={7.5} className="text-yellow-500" />
             <span>{playlist.items.length} file{playlist.items.length !== 1 ? 's' : ''}</span>
           </div>
         </div>
 
         {/* Info */}
-        <div className="space-y-1.5 min-h-0">
-          <div className="flex items-start justify-between gap-2.5">
+        <div className="space-y-1 min-h-0">
+          <div className="flex items-start justify-between gap-1.5">
             <div className="flex flex-col min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <h3 className="font-bold text-white text-[12.5px] truncate uppercase tracking-wider">
+              <div className="flex items-center gap-1 flex-wrap">
+                <h3 
+                  className="font-bold text-white text-[11px] truncate group-hover:whitespace-normal group-hover:break-words uppercase tracking-wider transition-all duration-300"
+                  title={playlist.name}
+                >
                   {playlist.name}
                 </h3>
                 {playlist.is_online && (
-                  <span className="flex items-center gap-0.5 text-[7px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-950/50 px-1.5 py-0.5 rounded-full border border-emerald-900/40 status-pulse">
-                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full" />
+                  <span className="flex items-center gap-0.5 text-[6.5px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-950/50 px-1 py-0.5 rounded-full border border-emerald-900/40 status-pulse">
+                    <span className="w-1 h-1 bg-emerald-400 rounded-full" />
                     Live
                   </span>
                 )}
@@ -390,7 +393,7 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({
                 e.stopPropagation(); // Prevent opening editor!
                 onToggleActive(!playlist.active);
               }}
-              className={`px-2.5 py-0.5 rounded-lg border text-[8px] font-black uppercase tracking-widest cursor-pointer transition-all shrink-0 ${
+              className={`px-1.5 py-0.5 rounded border text-[7.5px] font-black uppercase tracking-widest cursor-pointer transition-all shrink-0 ${
                 playlist.active 
                   ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-500 hover:bg-yellow-500/20' 
                   : 'bg-zinc-950/40 border-zinc-900/60 text-zinc-550 hover:text-zinc-400'
@@ -402,8 +405,8 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({
           </div>
 
           {/* Scheduling status summary text */}
-          <div className="flex items-center gap-2 text-[9px] text-zinc-450 bg-zinc-950/30 px-2.5 py-1.5 rounded-xl border border-zinc-900/40 font-medium">
-            <Calendar size={11} className="text-zinc-650 shrink-0" />
+          <div className="flex items-center gap-1.5 text-[8.5px] text-zinc-450 bg-zinc-950/30 px-2 py-1 rounded-xl border border-zinc-900/40 font-medium">
+            <Calendar size={9.5} className="text-zinc-655 shrink-0" />
             <span className="truncate">
               {playlist.schedule_enabled ? (
                 <>
@@ -411,7 +414,7 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({
                   {playlist.schedule_start_time && ` (${playlist.schedule_start_time}-${playlist.schedule_end_time})`}
                 </>
               ) : (
-                'Fallback manual queue'
+                'Manual queue'
               )}
             </span>
           </div>
@@ -419,10 +422,10 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({
       </div>
 
       {/* Footer Action Links */}
-      <div className="flex items-center justify-between gap-2.5 pt-2.5 border-t border-zinc-900/50">
-        <span className="flex items-center gap-1 text-[9.5px] text-yellow-500 font-extrabold uppercase tracking-wider group-hover:text-white transition-colors">
-          <FolderOpen size={12} className="shrink-0" />
-          <span>Manage Queue</span>
+      <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-zinc-900/50">
+        <span className="flex items-center gap-0.5 text-[8.5px] text-yellow-500 font-extrabold uppercase tracking-wider group-hover:text-white transition-colors">
+          <FolderOpen size={10.5} className="shrink-0" />
+          <span>Queue</span>
         </span>
 
         {onDelete ? (
@@ -431,18 +434,18 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({
               e.stopPropagation(); // Prevent opening editor!
               onDelete();
             }}
-            className="p-1.5 text-zinc-650 hover:text-red-500 rounded hover:bg-red-500/10 transition-all cursor-pointer"
+            className="p-1 text-zinc-650 hover:text-red-500 rounded hover:bg-red-500/10 transition-all cursor-pointer"
             title="Delete playlist"
           >
-            <Trash2 size={12} />
+            <Trash2 size={10.5} />
           </button>
         ) : (
           <div 
-            className="flex items-center gap-1 px-2 py-1 rounded bg-zinc-950/40 border border-zinc-900/50 text-zinc-600 select-none"
+            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-zinc-950/40 border border-zinc-900/50 text-zinc-600 select-none"
             title="System Default Playlist (Cannot be deleted)"
           >
-            <Lock size={10} className="text-zinc-500" />
-            <span className="text-[8px] font-black uppercase tracking-wider">Locked</span>
+            <Lock size={8.5} className="text-zinc-500" />
+            <span className="text-[7.5px] font-black uppercase tracking-wider">Locked</span>
           </div>
         )}
       </div>
@@ -462,6 +465,14 @@ export default function PlaylistManager({
 }: PlaylistManagerProps) {
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  
+  // Custom Confirmation Dialog State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void | Promise<void>;
+  } | null>(null);
   
   // Custom media visual editor modal state
   const [editingItem, setEditingItem] = useState<MediaItem | null>(null);
@@ -717,39 +728,49 @@ export default function PlaylistManager({
   const handleDeleteSelectedItems = () => {
     if (!selectedPlaylistId || selectedItemIds.length === 0) return;
 
-    if (confirm(`Are you sure you want to delete the ${selectedItemIds.length} selected item(s) from the playlist queue?`)) {
-      const updated = playlists.map(p => {
-        if (p.id === selectedPlaylistId) {
-          return {
-            ...p,
-            items: p.items.filter(item => !selectedItemIds.includes(item.id))
-          };
-        }
-        return p;
-      });
-      onPlaylistsChange(updated);
-      setSelectedItemIds([]);
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: "Remove Selected Items",
+      message: `Are you sure you want to delete the ${selectedItemIds.length} selected item(s) from the playlist queue?`,
+      onConfirm: () => {
+        const updated = playlists.map(p => {
+          if (p.id === selectedPlaylistId) {
+            return {
+              ...p,
+              items: p.items.filter(item => !selectedItemIds.includes(item.id))
+            };
+          }
+          return p;
+        });
+        onPlaylistsChange(updated);
+        setSelectedItemIds([]);
+      }
+    });
   };
 
   const handleDeleteAssetGlobally = async (assetId: string) => {
-    if (confirm("Are you sure you want to permanently delete this media file from the entire Asset Library? This will also remove it from all playlists!")) {
-      try {
-        await deleteMediaItem(assetId);
-        
-        // Remove from all local playlists
-        const updatedPlaylists = playlists.map(p => ({
-          ...p,
-          items: p.items.filter(item => item.id !== assetId)
-        }));
-        onPlaylistsChange(updatedPlaylists);
-        
-        // Reload global library list
-        await onReloadUploadedMedia();
-      } catch (e) {
-        console.error("Failed to delete asset globally:", e);
+    setConfirmModal({
+      isOpen: true,
+      title: "Delete Media Asset Globally",
+      message: "Are you sure you want to permanently delete this media file from the entire Asset Library? This will also remove it from all playlists!",
+      onConfirm: async () => {
+        try {
+          await deleteMediaItem(assetId);
+          
+          // Remove from all local playlists
+          const updatedPlaylists = playlists.map(p => ({
+            ...p,
+            items: p.items.filter(item => item.id !== assetId)
+          }));
+          onPlaylistsChange(updatedPlaylists);
+          
+          // Reload global library list
+          await onReloadUploadedMedia();
+        } catch (e) {
+          console.error("Failed to delete asset globally:", e);
+        }
       }
-    }
+    });
   };
 
   const handleTogglePlaylistActive = (id: string, active: boolean) => {
@@ -1158,7 +1179,7 @@ export default function PlaylistManager({
           )}
 
           {/* List of Playlists */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10 gap-2 items-stretch">
             {playlists.map((playlist) => (
               <PlaylistCard
                 key={playlist.id}
@@ -1258,8 +1279,15 @@ export default function PlaylistManager({
               {managedPlaylist?.id !== 'default-playlist' && (
                 <button
                   onClick={() => {
-                    if (managedPlaylist && confirm(`Are you sure you want to delete "${managedPlaylist.name}"?`)) {
-                      handleDeletePlaylist(managedPlaylist.id);
+                    if (managedPlaylist) {
+                      setConfirmModal({
+                        isOpen: true,
+                        title: "Delete Playlist",
+                        message: `Are you sure you want to delete "${managedPlaylist.name}"? This action cannot be undone.`,
+                        onConfirm: () => {
+                          handleDeletePlaylist(managedPlaylist.id);
+                        }
+                      });
                     }
                   }}
                   className="px-3 py-1.5 rounded-xl border border-red-900/30 bg-red-950/20 text-red-500 hover:bg-red-500 hover:text-black hover:border-red-500 text-[10px] font-extrabold uppercase tracking-widest cursor-pointer transition-all flex items-center gap-1.5"
@@ -1824,6 +1852,46 @@ export default function PlaylistManager({
                 </button>
               </div>
 
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Confirmation Modal */}
+      {confirmModal && confirmModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md animate-fadeIn">
+          <div className="glass-panel rounded-3xl p-6 border border-zinc-800/80 max-w-sm w-full mx-4 shadow-2xl space-y-6 relative overflow-hidden">
+            {/* Ambient subtle background spot */}
+            <div className="absolute -top-12 -right-12 w-24 h-24 rounded-full bg-yellow-500/5 blur-xl pointer-events-none" />
+            
+            <div className="space-y-2">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-yellow-500/10 text-yellow-500 border border-yellow-500/20">
+                  <AlertCircle size={16} />
+                </span>
+                {confirmModal.title}
+              </h3>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                {confirmModal.message}
+              </p>
+            </div>
+            
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-zinc-900/60">
+              <button
+                onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 rounded-xl border border-zinc-900 bg-zinc-950/40 text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all font-medium text-[11px] uppercase tracking-wider cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  await confirmModal.onConfirm();
+                  setConfirmModal(null);
+                }}
+                className="px-4 py-2 rounded-xl border border-red-500/30 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-black hover:border-red-500 transition-all font-bold text-[11px] uppercase tracking-wider cursor-pointer"
+              >
+                Confirm
+              </button>
             </div>
           </div>
         </div>

@@ -1,14 +1,14 @@
 import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
 
-const CLIENT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-const PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
-
 export async function GET(
   request: Request,
   context: { params: Promise<{ fileId: string }> }
 ) {
   try {
+    const CLIENT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    const PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+
     // Resolve dynamic params safely for all Next.js versions (including Next.js 15/16 async params)
     const resolvedParams = await context.params;
     const fileId = resolvedParams.fileId;

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   ToggleLeft, 
   ToggleRight, 
@@ -41,8 +41,10 @@ interface YouTubeControlProps {
   playlistsData?: string; // Stored as a JSON-stringified array of YouTubePlaylist
   enabled: boolean;
   mute: boolean;
-  onUpdate: (settings: { youtube_url?: string; youtube_enabled?: boolean; mute?: boolean; youtube_active_id?: string; youtube_playlists?: string }) => Promise<void>;
+  loop?: boolean;
+  onUpdate: (settings: { youtube_url?: string; youtube_enabled?: boolean; mute?: boolean; youtube_active_id?: string; youtube_playlists?: string; youtube_loop?: boolean }) => Promise<void>;
   slideDuration?: number;
+  activeId?: string;
 }
 
 // Parse YouTube ID from standard watch link, share link, or embed link
@@ -66,7 +68,8 @@ export function parseYouTubeUrls(youtube_url: string): YouTubeItem[] {
         return {
           id: item.id || `yt-${index}`,
           url: item.url || '',
-          enabled: item.enabled !== undefined ? item.enabled : true
+          enabled: item.enabled !== undefined ? item.enabled : true,
+          title: item.title
         };
       });
     }
@@ -76,10 +79,199 @@ export function parseYouTubeUrls(youtube_url: string): YouTubeItem[] {
   return [{ id: 'yt-default', url: youtube_url, enabled: true }];
 }
 
-export default function YouTubeControl({ url, playlistsData, enabled, mute, onUpdate, slideDuration = 8 }: YouTubeControlProps) {
+interface YouTubePlaylistCardProps {
+  playlist: YouTubePlaylist;
+  isActive: boolean;
+  isRenaming: boolean;
+  playlistRenameInput: string;
+  setPlaylistRenameInput: (val: string) => void;
+  setEditingPlaylistId: (id: string | null) => void;
+  onRenamePlaylist: (id: string, name: string) => void;
+  onDeletePlaylist: (id: string, e: React.MouseEvent) => void;
+  onTogglePlaylistActive: (id: string, e: React.MouseEvent) => void;
+  onSelect: () => void;
+  isGlobalEnabled: boolean;
+  playingState: { itemId: string | null; progress: number };
+  showDeleteButton: boolean;
+  activeId?: string;
+}
+
+const YouTubePlaylistCard: React.FC<YouTubePlaylistCardProps> = ({
+  playlist,
+  isActive,
+  isRenaming,
+  playlistRenameInput,
+  setPlaylistRenameInput,
+  setEditingPlaylistId,
+  onRenamePlaylist,
+  onDeletePlaylist,
+  onTogglePlaylistActive,
+  onSelect,
+  isGlobalEnabled,
+  playingState,
+  showDeleteButton,
+  activeId
+}) => {
+  const previewItems = playlist.items.filter(item => item.enabled && getYouTubeId(item.url));
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  // If there's an item playing in this active playlist, find its index to show it immediately
+  const activePlayingId = playingState.itemId || (isActive ? activeId : null);
+  const playingItemIndex = previewItems.findIndex(item => item.id === activePlayingId);
+  const isCurrentlyPlayingAny = isGlobalEnabled && isActive && playingItemIndex !== -1;
+
+  useEffect(() => {
+    if (isCurrentlyPlayingAny) {
+      setCurrentIndex(playingItemIndex);
+      return;
+    }
+    if (previewItems.length <= 1) return;
+    const interval = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % previewItems.length);
+    }, 3000); // cycle every 3 seconds
+    return () => clearInterval(interval);
+  }, [previewItems.length, isCurrentlyPlayingAny, playingItemIndex]);
+
+  const currentPreviewItem = previewItems[currentIndex];
+  const videoId = currentPreviewItem ? getYouTubeId(currentPreviewItem.url) : null;
+
+  return (
+    <div
+      onClick={onSelect}
+      className={`group relative rounded-2xl p-3.5 border transition-all duration-300 flex flex-col justify-between aspect-square cursor-pointer overflow-hidden bg-zinc-950 ${
+        isActive 
+          ? 'border-red-500/35 shadow-[0_0_15px_rgba(239,68,68,0.03)] bg-zinc-900/40' 
+          : 'border-zinc-900 hover:border-red-500/25 hover:bg-zinc-900/10'
+      }`}
+    >
+      {/* Background preview */}
+      {videoId ? (
+        <div className="absolute inset-0 z-0">
+          <img
+            src={`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`}
+            alt="Playlist preview"
+            className="w-full h-full object-cover opacity-25 group-hover:opacity-35 transition-opacity duration-300"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/60 to-transparent" />
+        </div>
+      ) : (
+        <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.03)_0%,transparent_70%)] opacity-80" />
+      )}
+
+      {/* Top Section */}
+      <div className="relative z-10 space-y-1.5 pointer-events-none">
+        <div className="flex items-start justify-between gap-1.5">
+          <div className="flex-1 min-w-0">
+            {isRenaming ? (
+              <div className="flex items-center gap-1 pointer-events-auto" onClick={e => e.stopPropagation()}>
+                <input
+                  type="text"
+                  value={playlistRenameInput}
+                  onChange={e => setPlaylistRenameInput(e.target.value)}
+                  className="bg-zinc-950 border border-zinc-850 rounded-xl px-2 py-1 text-[11px] text-white outline-none focus:border-red-500/40 w-full"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      onRenamePlaylist(playlist.id, playlistRenameInput);
+                      setEditingPlaylistId(null);
+                    }
+                  }}
+                />
+                <button
+                  onClick={() => {
+                    onRenamePlaylist(playlist.id, playlistRenameInput);
+                    setEditingPlaylistId(null);
+                  }}
+                  className="p-1.5 rounded bg-emerald-500/20 border border-emerald-500/30 text-emerald-450 hover:bg-emerald-500 hover:text-black cursor-pointer transition-colors"
+                >
+                  <Check size={11} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 group/name pointer-events-auto">
+                <h3 
+                  className="font-bold text-white text-[12px] truncate group-hover:whitespace-normal group-hover:break-words uppercase tracking-wider transition-all duration-300"
+                  title={playlist.name}
+                >
+                  {playlist.name}
+                </h3>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingPlaylistId(playlist.id);
+                    setPlaylistRenameInput(playlist.name);
+                  }}
+                  className="opacity-0 group-hover/name:opacity-100 p-0.5 text-zinc-550 hover:text-red-500 transition-opacity cursor-pointer"
+                >
+                  <Edit2 size={10} />
+                </button>
+              </div>
+            )}
+            <p className="text-[10px] text-zinc-500 mt-0.5">
+              {playlist.items.length} Stream Slots
+            </p>
+          </div>
+
+          {/* Active Status Badge */}
+          <button
+            onClick={(e) => onTogglePlaylistActive(playlist.id, e)}
+            className={`px-2.5 py-0.5 rounded-lg border text-[8px] font-black uppercase tracking-widest cursor-pointer transition-all shrink-0 pointer-events-auto ${
+              isActive 
+                ? 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20' 
+                : 'bg-zinc-950/40 border-zinc-900/60 text-zinc-550 hover:text-zinc-400 hover:border-zinc-800'
+            }`}
+          >
+            {isActive ? 'Active' : 'Activate'}
+          </button>
+        </div>
+      </div>
+
+      {/* Middle/Center overlay when active & playing */}
+      {isCurrentlyPlayingAny && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-[10px] font-black text-red-400 tracking-wider shadow-lg animate-pulse backdrop-blur-sm">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
+            PLAYING SLOT #{playingItemIndex + 1}
+          </div>
+        </div>
+      )}
+
+      {/* Bottom Section */}
+      <div className="relative z-10 flex items-center justify-between pt-2 border-t border-zinc-900/40 mt-auto">
+        <span className="flex items-center gap-1 text-[9.5px] text-red-500 font-extrabold uppercase tracking-wider group-hover:text-white transition-colors">
+          <FolderOpen size={11} className="shrink-0" />
+          <span>Manage Links</span>
+        </span>
+
+        {showDeleteButton && (
+          <button
+            onClick={(e) => onDeletePlaylist(playlist.id, e)}
+            className="p-1 text-zinc-555 hover:text-red-500 rounded hover:bg-red-500/10 transition-all cursor-pointer"
+            title="Delete Playlist"
+          >
+            <Trash2 size={12} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default function YouTubeControl({ url, playlistsData, enabled, mute, loop = true, onUpdate, slideDuration = 8, activeId }: YouTubeControlProps) {
   const [playlists, setPlaylists] = useState<YouTubePlaylist[]>([]);
+  const prevUrlRef = useRef<string>(url);
+  const prevPlaylistsDataRef = useRef<string | undefined>(playlistsData);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
+  const [focusedItemId, setFocusedItemId] = useState<string | null>(null);
+  const fetchedUrlsRef = useRef<Set<string>>(new Set());
+  
+  // Custom Confirmation Dialog State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
   
   // Renaming playlist states
   const [editingPlaylistId, setEditingPlaylistId] = useState<string | null>(null);
@@ -154,41 +346,136 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, onUp
     }
   }, []);
 
-  // Sync external changes from playlistsData prop
+  // Fetch missing titles for any YouTubeItem in any playlist
   useEffect(() => {
-    if (playlistsData) {
+    if (playlists.length === 0) return;
+    
+    // Find all items in all playlists that don't have a title
+    const itemsToFetch: { playlistId: string; item: YouTubeItem }[] = [];
+    for (const p of playlists) {
+      for (const item of p.items) {
+        if (item.url && getYouTubeId(item.url) && !item.title && !fetchedUrlsRef.current.has(item.url)) {
+          itemsToFetch.push({ playlistId: p.id, item });
+        }
+      }
+    }
+
+    if (itemsToFetch.length === 0) return;
+
+    // Mark them as fetched
+    itemsToFetch.forEach(({ item }) => fetchedUrlsRef.current.add(item.url));
+
+    const fetchTitles = async () => {
+      let modified = false;
+      const updatedPlaylists = JSON.parse(JSON.stringify(playlists)) as YouTubePlaylist[];
+
+      for (const { playlistId, item } of itemsToFetch) {
+        try {
+          const res = await fetch(`/api/youtube/title?url=${encodeURIComponent(item.url)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.title) {
+              modified = true;
+              // Find playlist and item and update
+              const p = updatedPlaylists.find(pl => pl.id === playlistId);
+              if (p) {
+                const it = p.items.find(i => i.id === item.id);
+                if (it) {
+                  it.title = data.title;
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Error fetching title for", item.url, e);
+        }
+      }
+
+      if (modified) {
+        setPlaylists(updatedPlaylists);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('signage_youtube_playlists', JSON.stringify(updatedPlaylists));
+        }
+        
+        // Sync active playlist items to parent url
+        const activePlaylist = updatedPlaylists.find(p => p.active);
+        if (activePlaylist) {
+          onUpdate({ 
+            youtube_url: JSON.stringify(activePlaylist.items),
+            youtube_playlists: JSON.stringify(updatedPlaylists)
+          });
+        } else {
+          onUpdate({
+            youtube_playlists: JSON.stringify(updatedPlaylists)
+          });
+        }
+      }
+    };
+
+    const timer = setTimeout(fetchTitles, 1000);
+    return () => clearTimeout(timer);
+  }, [playlists, onUpdate]);
+
+  // Sync external changes (url or playlistsData)
+  useEffect(() => {
+    const urlChanged = url !== prevUrlRef.current;
+    const playlistsDataChanged = playlistsData !== prevPlaylistsDataRef.current;
+
+    prevUrlRef.current = url;
+    prevPlaylistsDataRef.current = playlistsData;
+
+    if (!urlChanged && !playlistsDataChanged) {
+      return;
+    }
+
+    let currentPlaylists = playlists;
+    let playlistsChanged = false;
+
+    // 1. If playlistsData changed externally, parse and update
+    if (playlistsDataChanged && playlistsData) {
       try {
         const parsed = JSON.parse(playlistsData) as YouTubePlaylist[];
-        if (JSON.stringify(parsed) !== JSON.stringify(playlists)) {
-          setPlaylists(parsed);
-          localStorage.setItem('signage_youtube_playlists', playlistsData);
+        if (JSON.stringify(parsed) !== JSON.stringify(currentPlaylists)) {
+          currentPlaylists = parsed;
+          playlistsChanged = true;
         }
       } catch (e) {
         console.error('Failed to parse updated playlistsData prop:', e);
       }
     }
-  }, [playlistsData]);
 
-  // Sync external url changes (e.g. from database sync) back to local active playlist items
-  useEffect(() => {
-    if (playlists.length === 0) return;
-    const active = playlists.find(p => p.active);
-    if (active) {
-      const activeItemsStr = JSON.stringify(active.items);
-      if (url !== activeItemsStr) {
-        const parsedItems = parseYouTubeUrls(url);
-        const updated = playlists.map(p => {
-          if (p.active) {
-            return { ...p, items: parsedItems };
-          }
-          return p;
-        });
-        setPlaylists(updated);
-        localStorage.setItem('signage_youtube_playlists', JSON.stringify(updated));
-        onUpdate({ youtube_playlists: JSON.stringify(updated) });
+    // 2. If url changed externally, sync it to the active playlist of currentPlaylists
+    if (urlChanged && currentPlaylists.length > 0) {
+      const active = currentPlaylists.find(p => p.active);
+      if (active) {
+        const activeItemsStr = JSON.stringify(active.items);
+        if (url !== activeItemsStr) {
+          const parsedItems = parseYouTubeUrls(url);
+          currentPlaylists = currentPlaylists.map(p => {
+            if (p.active) {
+              return { ...p, items: parsedItems };
+            }
+            return p;
+          });
+          playlistsChanged = true;
+        }
       }
     }
-  }, [url, playlists]);
+
+    // 3. Save and set playlists if changed
+    if (playlistsChanged) {
+      setPlaylists(currentPlaylists);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('signage_youtube_playlists', JSON.stringify(currentPlaylists));
+      }
+      
+      // If the change came from a direct URL update (and not playlistsData update),
+      // sync the updated playlists back to the parent.
+      if (!playlistsDataChanged) {
+        onUpdate({ youtube_playlists: JSON.stringify(currentPlaylists) });
+      }
+    }
+  }, [url, playlistsData, playlists]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -284,15 +571,43 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, onUp
     setInputValues(prev => ({ ...prev, [id]: value }));
   };
 
-  const handleSaveItem = (id: string) => {
+  const handleSaveItem = async (id: string) => {
     const newUrl = inputValues[id] || '';
-    const updated = items.map(item => {
+    
+    // Save locally first to ensure immediate feedback
+    let updated = items.map(item => {
       if (item.id === id) {
-        return { ...item, url: newUrl };
+        const titleVal = item.url === newUrl ? item.title : undefined;
+        return { ...item, url: newUrl, title: titleVal };
       }
       return item;
     });
     saveItems(updated);
+
+    const videoId = getYouTubeId(newUrl);
+    if (videoId) {
+      try {
+        const response = await fetch(`/api/youtube/title?url=${encodeURIComponent(newUrl)}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.title) {
+            // Retrieve latest items in state to avoid overwrites
+            const activePlaylist = playlists.find(p => p.id === selectedPlaylistId);
+            const currentItems = activePlaylist ? activePlaylist.items : updated;
+            
+            const updatedWithTitle = currentItems.map(item => {
+              if (item.id === id) {
+                return { ...item, title: data.title };
+              }
+              return item;
+            });
+            saveItems(updatedWithTitle);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch YouTube title:", err);
+      }
+    }
   };
 
   const handleToggleEnabled = (id: string) => {
@@ -302,16 +617,40 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, onUp
       }
       return item;
     });
+    
+    // If the active stream is being disabled, assign active ID to another enabled stream
+    const targetItem = items.find(item => item.id === id);
+    if (targetItem && targetItem.enabled) { // Was enabled, now disabled
+      if (activeId === id) {
+        const nextEnabledItem = updated.find(item => item.enabled && getYouTubeId(item.url));
+        onUpdate({ youtube_active_id: nextEnabledItem ? nextEnabledItem.id : '' });
+      }
+    }
+
     saveItems(updated);
   };
 
   const handleDeleteItem = (id: string) => {
-    const updated = items.filter(item => item.id !== id);
-    saveItems(updated);
-    
-    const newInputs = { ...inputValues };
-    delete newInputs[id];
-    setInputValues(newInputs);
+    setConfirmModal({
+      isOpen: true,
+      title: "Delete Stream Slot",
+      message: "Are you sure you want to delete this stream slot? This action cannot be undone.",
+      onConfirm: () => {
+        const updated = items.filter(item => item.id !== id);
+        
+        // If the active stream is being deleted, assign active ID to another enabled stream
+        if (activeId === id) {
+          const nextEnabledItem = updated.find(item => item.enabled && getYouTubeId(item.url));
+          onUpdate({ youtube_active_id: nextEnabledItem ? nextEnabledItem.id : '' });
+        }
+        
+        saveItems(updated);
+        
+        const newInputs = { ...inputValues };
+        delete newInputs[id];
+        setInputValues(newInputs);
+      }
+    });
   };
 
   const handleAddItem = () => {
@@ -332,6 +671,10 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, onUp
     onUpdate({ mute: !mute });
   };
 
+  const toggleLoop = () => {
+    onUpdate({ youtube_loop: !loop });
+  };
+
   // YouTube Playlist operations
   const handleCreatePlaylist = (name: string) => {
     if (!name.trim()) return;
@@ -348,17 +691,22 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, onUp
 
   const handleDeletePlaylist = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Are you sure you want to delete this playlist?')) {
-      const toDelete = playlists.find(p => p.id === id);
-      const updated = playlists.filter(p => p.id !== id);
-      if (toDelete?.active && updated.length > 0) {
-        updated[0].active = true;
+    setConfirmModal({
+      isOpen: true,
+      title: "Delete Playlist",
+      message: "Are you sure you want to delete this playlist? This will remove all items inside it.",
+      onConfirm: () => {
+        const toDelete = playlists.find(p => p.id === id);
+        const updated = playlists.filter(p => p.id !== id);
+        if (toDelete?.active && updated.length > 0) {
+          updated[0].active = true;
+        }
+        savePlaylistsState(updated);
+        if (selectedPlaylistId === id) {
+          setSelectedPlaylistId(null);
+        }
       }
-      savePlaylistsState(updated);
-      if (selectedPlaylistId === id) {
-        setSelectedPlaylistId(null);
-      }
-    }
+    });
   };
 
   const handleTogglePlaylistActive = (id: string, e: React.MouseEvent) => {
@@ -424,14 +772,25 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, onUp
 
       {/* Global Mute Toggle Card */}
       <div className="grid grid-cols-2 gap-2">
-        <div className="flex items-center justify-between p-2.5 rounded-xl bg-zinc-950/20 border border-zinc-900">
-          <span className="text-xs text-zinc-400 flex items-center gap-1.5">
-            <RotateCcw size={12} className="text-zinc-500" /> Auto Loop
+        <button
+          onClick={toggleLoop}
+          className={`flex items-center justify-between p-2.5 rounded-xl border transition-all duration-300 text-left cursor-pointer ${
+            loop
+              ? 'bg-red-500/5 border-red-500/20 text-red-500'
+              : 'bg-zinc-950/20 border-zinc-900 text-zinc-400 hover:border-zinc-850'
+          }`}
+        >
+          <span className="text-xs flex items-center gap-1.5">
+            <RotateCcw size={12} className={loop ? 'text-red-500' : 'text-zinc-500'} /> Auto Loop
           </span>
-          <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-red-500 font-bold uppercase">
-            Active
-          </span>
-        </div>
+          <div className="shrink-0">
+            {loop ? (
+              <ToggleRight className="w-6 h-6 text-red-500" />
+            ) : (
+              <ToggleLeft className="w-6 h-6 text-zinc-700" />
+            )}
+          </div>
+        </button>
 
         <button
           onClick={toggleMute}
@@ -467,103 +826,26 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, onUp
           </div>
 
           {/* List Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {playlists.map((playlist) => {
-              const isActive = playlist.active;
-              const isRenaming = editingPlaylistId === playlist.id;
-
-              return (
-                <div
-                  key={playlist.id}
-                  onClick={() => setSelectedPlaylistId(playlist.id)}
-                  className={`group relative rounded-2xl p-4 border transition-all duration-300 flex flex-col justify-between min-h-[140px] cursor-pointer bg-zinc-950/20 hover:border-red-500/25 ${
-                    isActive 
-                      ? 'border-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.03)] bg-zinc-900/40' 
-                      : 'border-zinc-900 hover:bg-zinc-900/10'
-                  }`}
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        {isRenaming ? (
-                          <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                            <input
-                              type="text"
-                              value={playlistRenameInput}
-                              onChange={e => setPlaylistRenameInput(e.target.value)}
-                              className="bg-zinc-950 border border-zinc-800 rounded-xl px-2 py-1 text-xs text-white outline-none focus:border-red-500/40 w-full"
-                              onKeyDown={e => {
-                                if (e.key === 'Enter') {
-                                  handleRenamePlaylist(playlist.id, playlistRenameInput);
-                                  setEditingPlaylistId(null);
-                                }
-                              }}
-                            />
-                            <button
-                              onClick={() => {
-                                handleRenamePlaylist(playlist.id, playlistRenameInput);
-                                setEditingPlaylistId(null);
-                              }}
-                              className="p-1.5 rounded bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500 hover:text-black cursor-pointer transition-colors"
-                            >
-                              <Check size={12} />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5 group/name">
-                            <h3 className="font-bold text-white text-[12.5px] truncate uppercase tracking-wider">
-                              {playlist.name}
-                            </h3>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingPlaylistId(playlist.id);
-                                setPlaylistRenameInput(playlist.name);
-                              }}
-                              className="opacity-0 group-hover/name:opacity-100 p-0.5 text-zinc-500 hover:text-red-500 transition-opacity cursor-pointer"
-                            >
-                              <Edit2 size={10} />
-                            </button>
-                          </div>
-                        )}
-                        <p className="text-[10px] text-zinc-500 mt-1">
-                          {playlist.items.length} Stream Slots
-                        </p>
-                      </div>
-
-                      {/* Active Status Badge */}
-                      <button
-                        onClick={(e) => handleTogglePlaylistActive(playlist.id, e)}
-                        className={`px-2.5 py-0.5 rounded-lg border text-[8px] font-black uppercase tracking-widest cursor-pointer transition-all ${
-                          isActive 
-                            ? 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20' 
-                            : 'bg-zinc-950/40 border-zinc-900/60 text-zinc-550 hover:text-zinc-400 hover:border-zinc-800'
-                        }`}
-                      >
-                        {isActive ? 'Active' : 'Activate'}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between mt-4 pt-2.5 border-t border-zinc-900/50">
-                    <span className="flex items-center gap-1 text-[9.5px] text-red-500 font-extrabold uppercase tracking-wider group-hover:text-white transition-colors">
-                      <FolderOpen size={11} className="shrink-0" />
-                      <span>Manage Links</span>
-                    </span>
-
-                    {playlists.length > 1 && (
-                      <button
-                        onClick={(e) => handleDeletePlaylist(playlist.id, e)}
-                        className="p-1.5 text-zinc-650 hover:text-red-500 rounded hover:bg-red-500/10 transition-all cursor-pointer"
-                        title="Delete Playlist"
-                      >
-                        <Trash2 size={11} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4">
+            {playlists.map((playlist) => (
+              <YouTubePlaylistCard
+                key={playlist.id}
+                playlist={playlist}
+                isActive={playlist.active}
+                isRenaming={editingPlaylistId === playlist.id}
+                playlistRenameInput={playlistRenameInput}
+                setPlaylistRenameInput={setPlaylistRenameInput}
+                setEditingPlaylistId={setEditingPlaylistId}
+                onRenamePlaylist={handleRenamePlaylist}
+                onDeletePlaylist={handleDeletePlaylist}
+                onTogglePlaylistActive={handleTogglePlaylistActive}
+                onSelect={() => setSelectedPlaylistId(playlist.id)}
+                isGlobalEnabled={enabled}
+                playingState={playingState}
+                showDeleteButton={playlists.length > 1}
+                activeId={activeId}
+              />
+            ))}
           </div>
 
           {/* Create Playlist Form */}
@@ -627,21 +909,24 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, onUp
           </div>
 
           {/* Grid of Slots */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3">
             {items.map((item, index) => {
               const currentInput = inputValues[item.id] ?? '';
               const isModified = currentInput !== item.url;
               const videoId = getYouTubeId(currentInput);
               const savedVideoId = getYouTubeId(item.url);
 
-              // Calculate if this stream is currently playing using broadcast playingState
-              const isPlaying = enabled && playingState.itemId === item.id;
+              // Calculate if this stream is currently playing using broadcast playingState or activeId fallback
+              const isPlaying = enabled && (
+                playingState.itemId === item.id || 
+                (!playingState.itemId && activeId === item.id)
+              );
               const progressPercent = isPlaying ? playingState.progress : 0;
 
               return (
                 <div 
                   key={item.id} 
-                  className={`relative aspect-square rounded-2xl overflow-hidden bg-zinc-950 border shadow-2xl flex flex-col justify-between transition-all duration-300 group ${
+                  className={`relative aspect-square rounded-xl overflow-hidden bg-zinc-950 border shadow-lg flex flex-col justify-between transition-all duration-300 group ${
                     isPlaying 
                       ? 'border-red-500/40 shadow-red-500/5 ring-1 ring-red-500/30' 
                       : 'border-zinc-900 hover:border-zinc-800'
@@ -659,28 +944,28 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, onUp
                   )}
 
                   {/* Top Bar Header Overlay */}
-                  <div className="absolute top-3 inset-x-3 flex items-center justify-between z-20 pointer-events-none">
+                  <div className="absolute top-2 inset-x-2 flex items-center justify-between z-20 pointer-events-none">
                     {/* Channel & Playing badge overlay */}
-                    <div className="flex items-center gap-1.5">
-                      <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-black/75 border border-zinc-850 text-[10px] font-bold text-red-500 font-mono tracking-wider shadow-md backdrop-blur-md">
+                    <div className="flex items-center gap-1">
+                      <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/85 border border-zinc-850 text-[9px] font-bold text-red-550 font-mono tracking-wide shadow-md backdrop-blur-md">
                         <span className={`w-1.5 h-1.5 rounded-full ${item.enabled && savedVideoId ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
-                        CH #{index + 1}
+                        CH#{index + 1}
                       </span>
                       {isPlaying && (
-                        <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-[9px] font-extrabold text-emerald-400 tracking-wider shadow-md backdrop-blur-md animate-pulse">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                          ON AIR
+                        <span className="flex items-center gap-0.5 px-1 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-[8px] font-extrabold text-emerald-450 tracking-wider shadow-md backdrop-blur-md animate-pulse">
+                          <span className="w-1 h-1 rounded-full bg-emerald-400 animate-ping" />
+                          LIVE
                         </span>
                       )}
                     </div>
 
                     {/* Actions Toolbar */}
-                    <div className="flex items-center gap-1.5 pointer-events-auto">
+                    <div className="flex items-center gap-1 pointer-events-auto">
                       {/* Play Now Button */}
                       {item.enabled && savedVideoId && (
                         <button
                           onClick={() => handlePlayNow(item.id)}
-                          className={`p-1.5 rounded-xl border transition-all duration-200 cursor-pointer shadow-md backdrop-blur-md active:scale-90 ${
+                          className={`p-1 rounded border transition-all duration-200 cursor-pointer shadow-md backdrop-blur-md active:scale-90 ${
                             isPlaying
                               ? 'bg-red-500 text-white border-red-500 hover:bg-red-400 font-bold'
                               : 'bg-zinc-950/60 border-zinc-850 text-zinc-300 hover:text-red-500 hover:border-red-500/30'
@@ -694,7 +979,7 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, onUp
                       {/* Play/Stop Power Button */}
                       <button
                         onClick={() => handleToggleEnabled(item.id)}
-                        className={`p-1.5 rounded-xl border transition-all duration-200 cursor-pointer shadow-md backdrop-blur-md active:scale-90 ${
+                        className={`p-1 rounded border transition-all duration-200 cursor-pointer shadow-md backdrop-blur-md active:scale-90 ${
                           item.enabled 
                             ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20' 
                             : 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
@@ -707,7 +992,7 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, onUp
                       {/* Delete button */}
                       <button
                         onClick={() => handleDeleteItem(item.id)}
-                        className="p-1.5 rounded-xl border border-zinc-850 bg-black/60 text-zinc-400 hover:text-red-400 hover:border-red-500/30 transition-all duration-200 cursor-pointer shadow-md backdrop-blur-md active:scale-90"
+                        className="p-1 rounded border border-zinc-850 bg-black/60 text-zinc-450 hover:text-red-450 hover:border-red-500/30 transition-all duration-200 cursor-pointer shadow-md backdrop-blur-md active:scale-90"
                         title="Delete Stream Slot"
                       >
                         <Trash2 size={12} />
@@ -717,66 +1002,74 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, onUp
 
                   {/* Central status notification overlays */}
                   {!item.enabled ? (
-                    <div className="absolute inset-0 bg-black/60 backdrop-blur-[1.5px] z-10 flex flex-col items-center justify-center text-center p-4">
-                      <span className="text-[10px] uppercase font-black tracking-widest text-red-400 px-2.5 py-1 rounded-xl bg-red-950/20 border border-red-900/30 shadow-lg">
-                        STOPPED / STANDBY
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-[1px] z-10 flex flex-col items-center justify-center text-center p-2">
+                      <span className="text-[9px] uppercase font-black tracking-widest text-red-400 px-1.5 py-0.5 rounded bg-red-950/20 border border-red-900/30 shadow-lg">
+                        STANDBY
                       </span>
                     </div>
                   ) : !videoId && currentInput.trim() !== '' ? (
-                    <div className="absolute inset-0 bg-black/40 z-10 flex flex-col items-center justify-center text-center p-4">
-                      <span className="text-[9px] uppercase font-bold tracking-wider text-red-400 px-2 py-0.5 rounded bg-red-950/10 border border-red-900/20">
-                        ❌ Invalid YouTube URL
+                    <div className="absolute inset-0 bg-black/40 z-10 flex flex-col items-center justify-center text-center p-2">
+                      <span className="text-[8px] uppercase font-bold tracking-wider text-red-450 px-1 py-0.5 rounded bg-red-950/10 border border-red-900/20">
+                        Invalid URL
                       </span>
                     </div>
                   ) : !videoId ? (
-                    <div className="absolute inset-0 bg-black/10 z-10 flex flex-col items-center justify-center text-center p-4">
-                      <span className="text-[9px] uppercase font-bold tracking-wider text-zinc-500 px-2 py-0.5 rounded bg-zinc-900/40 border border-zinc-850">
-                        Empty Stream Slot #{index + 1}
+                    <div className="absolute inset-0 bg-black/10 z-10 flex flex-col items-center justify-center text-center p-2">
+                      <span className="text-[8.5px] uppercase font-bold tracking-wider text-zinc-550 px-1 py-0.5 rounded bg-zinc-900/40 border border-zinc-850">
+                        EMPTY SLOT #{index + 1}
                       </span>
                     </div>
                   ) : null}
 
                   {/* Bottom input form overlay */}
-                  <div className="absolute bottom-3 inset-x-3 z-20 flex gap-1.5">
+                  <div className="absolute bottom-2 inset-x-2 z-20 flex gap-1">
                     <div className="relative flex-1">
-                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-zinc-650">
+                      <div className="absolute inset-y-0 left-0 pl-1.5 flex items-center pointer-events-none text-zinc-550">
                         <Link2 size={11} />
                       </div>
                       <input
                         type="text"
-                        value={currentInput}
+                        value={focusedItemId === item.id ? currentInput : (item.title || currentInput)}
+                        onFocus={() => setFocusedItemId(item.id)}
                         onChange={(e) => handleInputChange(item.id, e.target.value)}
-                        onBlur={() => handleSaveItem(item.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleSaveItem(item.id);
+                        onBlur={() => {
+                          handleSaveItem(item.id);
+                          setFocusedItemId(null);
                         }}
-                        placeholder={`Paste YouTube URL for CH #${index + 1}...`}
-                        className="w-full pl-7 pr-3 py-1.5 text-[10px] bg-black/85 border border-zinc-850/80 rounded-xl text-white placeholder-zinc-700 focus:outline-none focus:border-red-500/40 focus:ring-1 focus:ring-red-500/40 transition-all duration-300 shadow-inner backdrop-blur-md"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleSaveItem(item.id);
+                            e.currentTarget.blur();
+                          }
+                        }}
+                        placeholder="Paste URL..."
+                        className="w-full pl-6 pr-1.5 py-1 text-[10px] bg-black/90 border border-zinc-850/80 rounded-md text-white placeholder-zinc-700 focus:outline-none focus:border-red-500/40 focus:ring-1 focus:ring-red-500/40 transition-all duration-300 shadow-inner backdrop-blur-md"
+                        title={item.title || currentInput}
                       />
                     </div>
                     <button
                       onClick={() => handleSaveItem(item.id)}
                       disabled={!isModified}
-                      className={`flex items-center justify-center p-1.5 rounded-xl transition-all duration-200 cursor-pointer active:scale-90 ${
+                      className={`flex items-center justify-center p-1 rounded-md transition-all duration-200 cursor-pointer active:scale-90 ${
                         isModified
                           ? item.url === ''
                             ? 'bg-red-500 text-white hover:bg-red-400 shadow-lg shadow-red-500/10'
                             : 'bg-emerald-500 text-black hover:bg-emerald-400 shadow-lg shadow-emerald-500/10'
-                          : 'bg-zinc-900/80 text-zinc-600 border border-zinc-850/50 cursor-not-allowed opacity-50'
+                          : 'bg-zinc-900/80 text-zinc-650 border border-zinc-850/50 cursor-not-allowed opacity-50'
                       }`}
                       title={item.url === '' ? "Add URL" : "Save URL"}
                     >
                       {item.url === '' ? (
-                        <Plus size={12} className="stroke-[3]" />
+                        <Plus size={11} className="stroke-[3]" />
                       ) : (
-                        <Check size={12} className="stroke-[3]" />
+                        <Check size={11} className="stroke-[3]" />
                       )}
                     </button>
                   </div>
 
                   {/* Progress Bar */}
                   {isPlaying && (
-                    <div className="absolute bottom-0 inset-x-0 h-1 bg-zinc-900/60 z-20">
+                    <div className="absolute bottom-0 inset-x-0 h-0.5 bg-zinc-900/60 z-20">
                       <div 
                         className="h-full bg-gradient-to-r from-red-500 to-amber-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] transition-all duration-200 ease-linear"
                         style={{ width: `${progressPercent}%` }}
@@ -790,20 +1083,57 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, onUp
             {/* "Add Stream Slot" grid card placeholder */}
             <button
               onClick={handleAddItem}
-              className="relative aspect-square rounded-2xl bg-zinc-950/20 border border-zinc-900 border-dashed hover:border-red-500/40 hover:bg-red-500/[0.02] transition-all duration-300 flex flex-col items-center justify-center gap-3 p-4 group cursor-pointer"
+              className="relative aspect-square rounded-xl bg-zinc-950/20 border border-zinc-900 border-dashed hover:border-red-500/40 hover:bg-red-500/[0.02] transition-all duration-300 flex flex-col items-center justify-center gap-1 p-2 group cursor-pointer"
             >
-              <div className="p-3 rounded-full bg-zinc-900/60 border border-zinc-850 text-zinc-500 group-hover:text-red-500 group-hover:border-red-500/30 group-hover:scale-110 transition-all duration-350 shadow-md">
-                <Plus size={20} className="stroke-[2.5]" />
+              <div className="p-1 rounded-full bg-zinc-900/60 border border-zinc-850 text-zinc-550 group-hover:text-red-500 group-hover:border-red-500/30 group-hover:scale-105 transition-all duration-300 shadow-md">
+                <Plus size={12} className="stroke-[2.5]" />
               </div>
               <div className="text-center">
-                <span className="text-xs font-bold text-zinc-400 group-hover:text-red-500 transition-colors duration-300">
-                  Add Stream Slot
+                <span className="text-[10px] font-bold text-zinc-400 group-hover:text-red-500 transition-colors duration-300">
+                  Add Slot
                 </span>
-                <p className="text-[10px] text-zinc-650 mt-0.5">
-                  Configure another live signage player feed
-                </p>
               </div>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Confirmation Modal */}
+      {confirmModal && confirmModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md animate-fadeIn">
+          <div className="glass-panel rounded-3xl p-6 border border-zinc-800/80 max-w-sm w-full mx-4 shadow-2xl space-y-6 relative overflow-hidden">
+            {/* Ambient subtle background spot */}
+            <div className="absolute -top-12 -right-12 w-24 h-24 rounded-full bg-red-500/10 blur-xl pointer-events-none" />
+            
+            <div className="space-y-2">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-red-500/10 text-red-500 border border-red-500/20">
+                  <Youtube size={16} />
+                </span>
+                {confirmModal.title}
+              </h3>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                {confirmModal.message}
+              </p>
+            </div>
+            
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-zinc-900/60">
+              <button
+                onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 rounded-xl border border-zinc-900 bg-zinc-950/40 text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all font-medium text-[11px] uppercase tracking-wider cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  confirmModal.onConfirm();
+                  setConfirmModal(null);
+                }}
+                className="px-4 py-2 rounded-xl border border-red-500/30 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-black hover:border-red-500 transition-all font-bold text-[11px] uppercase tracking-wider cursor-pointer"
+              >
+                Confirm
+              </button>
+            </div>
           </div>
         </div>
       )}

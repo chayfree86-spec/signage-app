@@ -71,6 +71,7 @@ export default function SignagePreview({
   const [youtubeProgress, setYoutubeProgress] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const playerRef = useRef<any>(null);
+  const lastLocalUpdateRef = useRef<number>(0);
 
   const activeYoutubeItems = parseYouTubeUrls(settings.youtube_url).filter(
     item => item.enabled && getYouTubeId(item.url)
@@ -89,6 +90,11 @@ export default function SignagePreview({
 
   // Sync settings active youtube ID on settings updates
   useEffect(() => {
+    // Skip external sync if we recently updated the setting locally to avoid race condition with polling
+    if (Date.now() - lastLocalUpdateRef.current < 6000) {
+      return;
+    }
+
     const youtubeItems = parseYouTubeUrls(settings.youtube_url);
     const activeItems = youtubeItems.filter(
       item => item.enabled && getYouTubeId(item.url)
@@ -121,6 +127,7 @@ export default function SignagePreview({
         );
         const idx = activeItems.findIndex(item => item.id === itemId);
         if (idx !== -1) {
+          lastLocalUpdateRef.current = Date.now();
           setCurrentYoutubeIndex(idx);
         }
       }
@@ -139,11 +146,32 @@ export default function SignagePreview({
   const handleYoutubeVideoEnded = () => {
     const items = activeYoutubeItemsRef.current;
     const currentIndex = currentYoutubeIndexRef.current;
-    if (items.length <= 1) return;
+    const isLoopEnabled = settings.youtube_loop !== false;
+    if (items.length === 0) return;
+    if (items.length === 1) {
+      // Replay the same video only if loop is enabled
+      if (isLoopEnabled) {
+        const player = playerRef.current;
+        if (player && typeof player.seekTo === 'function' && typeof player.playVideo === 'function') {
+          try {
+            player.seekTo(0, true);
+            player.playVideo();
+          } catch (e) {
+            console.error('Error replaying single video:', e);
+          }
+        }
+      }
+      return;
+    }
+    // If we're on the last video and loop is disabled, stop
+    if (!isLoopEnabled && currentIndex >= items.length - 1) {
+      return;
+    }
     const nextIndex = (currentIndex + 1) % items.length;
     setCurrentYoutubeIndex(nextIndex);
     const nextItem = items[nextIndex];
     if (nextItem && onUpdateSettings) {
+      lastLocalUpdateRef.current = Date.now();
       onUpdateSettings({ youtube_active_id: nextItem.id });
     }
   };
@@ -662,7 +690,7 @@ export default function SignagePreview({
             const originalIndex = youtubeItems.findIndex(item => item.id === currentItem.id);
             const channelNumber = originalIndex !== -1 ? originalIndex + 1 : currentYoutubeIndex + 1;
             const muteParam = settings.mute ? '1' : '1'; // Force mute=1 for autoplay to work
-            const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=${muteParam}&loop=1&playlist=${videoId}&controls=0&showinfo=0&rel=0&iv_load_policy=3&modestbranding=1&enablejsapi=1&playsinline=1&vq=hd1080&hd=1&origin=${typeof window !== 'undefined' ? window.location.origin : ''}`;
+            const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=${muteParam}&controls=0&showinfo=0&rel=0&iv_load_policy=3&modestbranding=1&enablejsapi=1&playsinline=1&vq=hd1080&hd=1&origin=${typeof window !== 'undefined' ? window.location.origin : ''}`;
             
             return (
               <div className="relative w-full h-full bg-black overflow-hidden group">
@@ -671,7 +699,7 @@ export default function SignagePreview({
                   key={`yt-${currentItem.id}-${videoId}-${muteParam}`}
                   src={embedUrl}
                   title={`Digital Signage YouTube Player #${channelNumber}`}
-                  className="w-full h-full border-0"
+                  className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 min-w-full min-h-full w-auto h-auto aspect-video border-0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                   allowFullScreen
                   style={{ pointerEvents: 'none' }}

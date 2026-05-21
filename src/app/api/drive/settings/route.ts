@@ -2,6 +2,8 @@ import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
 import { Readable } from 'stream';
 
+const SETTINGS_FILENAME = 'signage_settings.json';
+
 // Helper to authenticate and get Google Drive instance
 function getDriveInstance() {
   const CLIENT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -21,15 +23,15 @@ function getDriveInstance() {
   return google.drive({ version: 'v3', auth, timeout: 3000 });
 }
 
-// GET: Fetch playlist.json from Google Drive folder
+// GET: Fetch signage_settings.json from Google Drive folder
 export async function GET() {
   try {
     const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
     const drive = getDriveInstance();
 
-    // 1. Search for playlist.json in the folder
+    // 1. Search for signage_settings.json in the folder
     const searchResponse = await drive.files.list({
-      q: `'${FOLDER_ID}' in parents and name = 'playlist.json' and trashed = false`,
+      q: `'${FOLDER_ID}' in parents and name = '${SETTINGS_FILENAME}' and trashed = false`,
       fields: 'files(id, name)',
       spaces: 'drive',
     });
@@ -37,7 +39,7 @@ export async function GET() {
     const files = searchResponse.data.files || [];
     if (files.length === 0) {
       // File does not exist yet
-      return NextResponse.json({ success: true, playlists: null, message: 'No playlist file found on Drive.' });
+      return NextResponse.json({ success: true, settings: null, message: 'No settings file found on Drive.' });
     }
 
     const fileId = files[0].id!;
@@ -55,49 +57,49 @@ export async function GET() {
     const chunks: any[] = [];
     const stream = fileResponse.data as Readable;
     
-    const playlistJson = await new Promise<string>((resolve, reject) => {
+    const settingsJson = await new Promise<string>((resolve, reject) => {
       stream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
       stream.on('error', (err) => reject(err));
       stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     });
 
-    const parsed = JSON.parse(playlistJson);
+    const parsed = JSON.parse(settingsJson);
 
     return NextResponse.json({
       success: true,
-      playlists: parsed,
+      settings: parsed,
       fileId,
     });
 
   } catch (error: any) {
-    console.error('Google Drive Playlist Fetch Error:', error);
+    console.error('Google Drive Settings Fetch Error:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch playlist from Google Drive' },
+      { error: error.message || 'Failed to fetch settings from Google Drive' },
       { status: 500 }
     );
   }
 }
 
-// POST: Save/Overwrite playlist.json on Google Drive folder
+// POST: Save/Overwrite signage_settings.json on Google Drive folder
 export async function POST(req: Request) {
   try {
     const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
     const drive = getDriveInstance();
-    const { playlists } = await req.json();
+    const { settings } = await req.json();
 
-    if (!playlists || !Array.isArray(playlists)) {
-      return NextResponse.json({ error: 'Invalid or missing playlists data' }, { status: 400 });
+    if (!settings || typeof settings !== 'object') {
+      return NextResponse.json({ error: 'Invalid or missing settings data' }, { status: 400 });
     }
 
-    // 1. Search if playlist.json already exists
+    // 1. Search if signage_settings.json already exists
     const searchResponse = await drive.files.list({
-      q: `'${FOLDER_ID}' in parents and name = 'playlist.json' and trashed = false`,
+      q: `'${FOLDER_ID}' in parents and name = '${SETTINGS_FILENAME}' and trashed = false`,
       fields: 'files(id, name)',
       spaces: 'drive',
     });
 
     const files = searchResponse.data.files || [];
-    const jsonString = JSON.stringify(playlists, null, 2);
+    const jsonString = JSON.stringify(settings, null, 2);
     
     let response: any;
 
@@ -116,7 +118,7 @@ export async function POST(req: Request) {
       // 2b. Create new file
       response = await drive.files.create({
         requestBody: {
-          name: 'playlist.json',
+          name: SETTINGS_FILENAME,
           parents: [FOLDER_ID!],
         },
         media: {
@@ -131,18 +133,18 @@ export async function POST(req: Request) {
       success: true,
       fileId: response.data.id,
       name: response.data.name,
-      message: 'Playlist synced successfully to Google Drive.',
+      message: 'Settings synced successfully to Google Drive.',
     });
 
   } catch (error: any) {
-    console.error('Google Drive Playlist Sync Error:', error);
-    let errorMessage = error.message || 'Failed to sync playlist to Google Drive';
+    console.error('Google Drive Settings Sync Error:', error);
+    let errorMessage = error.message || 'Failed to sync settings to Google Drive';
     
     // Check for Service Account storage quota limit error
     if (errorMessage.includes('Service Accounts do not have storage quota') || 
         errorMessage.includes('storageQuotaExceeded') ||
         (error.code && error.code === 403)) {
-      errorMessage = 'SERVICE_ACCOUNT_QUOTA_ERROR: Google Service Account storage limit reached (0-byte quota). Please create an empty file named "playlist.json" in your shared Google Drive folder first, so that you are the owner and it uses your 15 GB free personal quota.';
+      errorMessage = 'SERVICE_ACCOUNT_QUOTA_ERROR: Google Service Account storage limit reached. Please create an empty file named "signage_settings.json" in your shared Google Drive folder first.';
     }
 
     return NextResponse.json(
@@ -151,4 +153,3 @@ export async function POST(req: Request) {
     );
   }
 }
-

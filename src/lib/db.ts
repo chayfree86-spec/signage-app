@@ -41,6 +41,7 @@ export interface YouTubeItem {
   id: string;
   url: string;
   enabled: boolean;
+  title?: string;
 }
 
 export interface YouTubePlaylist {
@@ -62,6 +63,7 @@ export interface SignageSettings {
   mute: boolean;
   youtube_active_id?: string;
   youtube_playlists?: string;
+  youtube_loop?: boolean;
 }
 
 const DEFAULT_SETTINGS: SignageSettings = {
@@ -75,6 +77,7 @@ const DEFAULT_SETTINGS: SignageSettings = {
   mute: true,
   youtube_active_id: '',
   youtube_playlists: '',
+  youtube_loop: true,
 };
 
 // ----------------------------------------------------
@@ -201,6 +204,31 @@ function makeBlobUrl(id: string, blob: Blob): string {
 // ----------------------------------------------------
 
 export async function fetchSettings(): Promise<SignageSettings> {
+  // 1. Try Google Drive first (cross-PC sync source of truth)
+  const isDriveConfigured = await checkGoogleDriveConfigured();
+  if (isDriveConfigured) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch('/api/drive/settings', { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.settings) {
+          const driveSettings = { ...DEFAULT_SETTINGS, ...data.settings };
+          // Cache locally for fast subsequent loads
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('signage_settings', JSON.stringify(driveSettings));
+          }
+          return driveSettings;
+        }
+      }
+    } catch (e) {
+      console.warn('Google Drive settings fetch failed, falling back:', e);
+    }
+  }
+
+  // 2. Try Supabase
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
@@ -223,6 +251,7 @@ export async function fetchSettings(): Promise<SignageSettings> {
           mute: !!data.mute,
           youtube_active_id: data.youtube_active_id ?? DEFAULT_SETTINGS.youtube_active_id,
           youtube_playlists: data.youtube_playlists ?? DEFAULT_SETTINGS.youtube_playlists,
+          youtube_loop: data.youtube_loop !== undefined ? !!data.youtube_loop : DEFAULT_SETTINGS.youtube_loop,
         };
       } else {
         // Table exists but no settings row exists yet - insert default
@@ -237,7 +266,7 @@ export async function fetchSettings(): Promise<SignageSettings> {
     }
   }
 
-  // Local Fallback
+  // 3. Local Fallback
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem('signage_settings');
     if (saved) {
@@ -284,7 +313,39 @@ export async function updateSettings(settings: Partial<SignageSettings>): Promis
   if (typeof window !== 'undefined') {
     localStorage.setItem('signage_settings', JSON.stringify(updated));
   }
+
+  // Background async sync to Google Drive for cross-PC persistence
+  syncSettingsToDrive(updated);
+
   return updated;
+}
+
+// Background async sync settings to Google Drive (fire-and-forget)
+function syncSettingsToDrive(settings: SignageSettings): void {
+  if (typeof window === 'undefined') return;
+  
+  checkGoogleDriveConfigured().then(configured => {
+    if (!configured) return;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    fetch('/api/drive/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings }),
+      signal: controller.signal
+    }).then(async res => {
+      clearTimeout(timeoutId);
+      if (!res.ok) {
+        const errText = await res.text().catch(() => 'Failed to sync settings to Drive');
+        console.warn('Drive settings sync failed:', errText);
+      }
+    }).catch(err => {
+      clearTimeout(timeoutId);
+      console.error('Error syncing settings to Google Drive:', err);
+    });
+  });
 }
 
 export async function fetchMedia(): Promise<MediaItem[]> {

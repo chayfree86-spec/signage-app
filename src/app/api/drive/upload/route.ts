@@ -2,12 +2,12 @@ import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
 import { Readable } from 'stream';
 
-const CLIENT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-const PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
-const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
-
 export async function POST(req: Request) {
   try {
+    const CLIENT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    const PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
+
     if (!CLIENT_EMAIL || !PRIVATE_KEY || !FOLDER_ID) {
       return NextResponse.json(
         { error: 'Google Drive credentials are not configured on the server.' },

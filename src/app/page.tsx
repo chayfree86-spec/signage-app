@@ -408,8 +408,10 @@ export default function Home() {
                       playlistsData={settings.youtube_playlists}
                       enabled={settings.youtube_enabled}
                       mute={settings.mute}
+                      loop={settings.youtube_loop !== false}
                       onUpdate={handleSettingsUpdate}
                       slideDuration={settings.slide_duration}
+                      activeId={settings.youtube_active_id}
                     />
                   )}
                 </div>
