@@ -689,12 +689,15 @@ export function savePlaylists(playlists: Playlist[]): void {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playlists }),
-      }).then(res => {
+      }).then(async res => {
         if (!res.ok) {
-          throw new Error('Failed to sync to Google Drive');
+          const errText = await res.text().catch(() => 'Failed to sync to Google Drive');
+          window.dispatchEvent(new CustomEvent('playlists-synced', { 
+            detail: { success: false, error: errText } 
+          }));
+          return;
         }
-        return res.json();
-      }).then(data => {
+        const data = await res.json();
         window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { success: true, message: data.message } }));
       }).catch(err => {
         console.error('Error syncing playlists to Google Drive:', err);
