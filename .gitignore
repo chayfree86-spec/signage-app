@@ -46,3 +46,6 @@ signage-app-*.json
 *.key
 credentials*.json
 
+# android builds / apk files
+*.apk
+

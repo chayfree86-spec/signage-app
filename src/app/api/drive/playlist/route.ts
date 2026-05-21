@@ -18,7 +18,7 @@ function getDriveInstance() {
     scopes: ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive']
   });
 
-  return google.drive({ version: 'v3', auth });
+  return google.drive({ version: 'v3', auth, timeout: 3000 });
 }
 
 // GET: Fetch playlist.json from Google Drive folder
@@ -134,9 +134,19 @@ export async function POST(req: Request) {
 
   } catch (error: any) {
     console.error('Google Drive Playlist Sync Error:', error);
+    let errorMessage = error.message || 'Failed to sync playlist to Google Drive';
+    
+    // Check for Service Account storage quota limit error
+    if (errorMessage.includes('Service Accounts do not have storage quota') || 
+        errorMessage.includes('storageQuotaExceeded') ||
+        (error.code && error.code === 403)) {
+      errorMessage = 'SERVICE_ACCOUNT_QUOTA_ERROR: Google Service Account storage limit reached (0-byte quota). Please create an empty file named "playlist.json" in your shared Google Drive folder first, so that you are the owner and it uses your 15 GB free personal quota.';
+    }
+
     return NextResponse.json(
-      { error: error.message || 'Failed to sync playlist to Google Drive' },
+      { error: errorMessage },
       { status: 500 }
     );
   }
 }
+

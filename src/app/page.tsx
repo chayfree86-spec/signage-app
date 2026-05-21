@@ -41,6 +41,7 @@ export default function Home() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [syncSeconds, setSyncSeconds] = useState(0);
   const [activeTab, setActiveTab] = useState<'media' | 'youtube' | 'qr' | 'system' | 'preview'>('preview');
+  const [activeTransitionStyle, setActiveTransitionStyle] = useState<string>('fade-scale');
 
   // References for periodic counters
   const syncTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -111,8 +112,10 @@ export default function Home() {
       const activePlay = resolveActivePlaylist(fetchedPlaylists);
       if (activePlay) {
         setMediaList(activePlay.items);
+        setActiveTransitionStyle(activePlay.transition_style || 'fade-scale');
       } else {
         setMediaList([]);
+        setActiveTransitionStyle('fade-scale');
       }
 
       resetSyncTimer();
@@ -151,18 +154,24 @@ export default function Home() {
         if (!sameItems) {
           setMediaList(activePlay.items);
         }
+
+        // Dynamic synchronization of transition style
+        const currentTransition = activePlay.transition_style || 'fade-scale';
+        if (activeTransitionStyle !== currentTransition) {
+          setActiveTransitionStyle(currentTransition);
+        }
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [playlists, mediaList]);
+  }, [playlists, mediaList, activeTransitionStyle]);
 
   // ----------------------------------------------------
   // MUTATION WRAPPERS (RESET SYNC TIMER INSTANTLY)
   // ----------------------------------------------------
-  const resetSyncTimer = () => {
+  function resetSyncTimer() {
     setSyncSeconds(0);
-  };
+  }
 
   const handleReloadUploadedMedia = async () => {
     const list = await fetchMedia();
@@ -176,8 +185,10 @@ export default function Home() {
     const activePlay = resolveActivePlaylist(updatedPlaylists);
     if (activePlay) {
       setMediaList(activePlay.items);
+      setActiveTransitionStyle(activePlay.transition_style || 'fade-scale');
     } else {
       setMediaList([]);
+      setActiveTransitionStyle('fade-scale');
     }
     resetSyncTimer();
   };
@@ -329,40 +340,40 @@ export default function Home() {
             <div className="flex-1 w-full z-10">
               
               {/* 1. LIVE TV PREVIEW CARD */}
-              {activeTab === 'preview' && (
-                <div className="glass-panel shadow-xl rounded-3xl p-5 transition-all duration-300 animate-fadeIn w-full flex flex-col items-center">
-                  <div className="w-full flex items-center justify-between border-b border-zinc-900 pb-3 mb-5">
-                    <div className="flex items-center gap-2">
-                      <Monitor size={18} className="text-yellow-500" />
-                      <h2 className="text-sm md:text-base font-bold text-white uppercase tracking-wider">
-                        Real-time TV Output Simulator
-                      </h2>
-                    </div>
-                    <span className="text-[10px] text-zinc-500 bg-zinc-950/80 px-2.5 py-1 rounded-full border border-zinc-900 font-mono tracking-wider">
-                      16:9 SCREEN RATIO
-                    </span>
+              <div className={`glass-panel shadow-xl rounded-3xl p-5 transition-all duration-300 animate-fadeIn w-full flex flex-col items-center ${activeTab === 'preview' ? '' : 'hidden'}`}>
+                <div className="w-full flex items-center justify-between border-b border-zinc-900 pb-3 mb-5">
+                  <div className="flex items-center gap-2">
+                    <Monitor size={18} className="text-yellow-500" />
+                    <h2 className="text-sm md:text-base font-bold text-white uppercase tracking-wider">
+                      Real-time TV Output Simulator
+                    </h2>
                   </div>
-                  
-                  {settings && (
-                    <div className="w-full max-w-5xl">
-                      <SignagePreview
-                        mediaList={mediaList}
-                        settings={settings}
-                        isFullscreen={isFullscreen}
-                        onCloseFullscreen={closeFullscreen}
-                      />
-                    </div>
-                  )}
-
-                  {/* Informative TV Helper Text */}
-                  <div className="w-full max-w-5xl mt-6 flex gap-3 p-4 rounded-2xl bg-zinc-950/30 border border-zinc-900">
-                    <Info size={16} className="text-yellow-500 shrink-0 mt-0.5" />
-                    <p className="text-[11px] text-zinc-500 leading-relaxed">
-                      This simulator behaves exactly as your physical digital signage TV screen would. Changes to playlist ordering, slide durations, and YouTube toggle update on this screen instantly. Use the configurations menu tabs on the left to customize content in real-time.
-                    </p>
-                  </div>
+                  <span className="text-[10px] text-zinc-500 bg-zinc-950/80 px-2.5 py-1 rounded-full border border-zinc-900 font-mono tracking-wider">
+                    16:9 SCREEN RATIO
+                  </span>
                 </div>
-              )}
+                
+                {settings && (
+                  <div className="w-full max-w-5xl">
+                    <SignagePreview
+                      mediaList={mediaList}
+                      settings={activeTab === 'preview' ? settings : { ...settings, mute: true }}
+                      isFullscreen={isFullscreen}
+                      onCloseFullscreen={closeFullscreen}
+                      transitionStyle={activeTransitionStyle}
+                      onUpdateSettings={handleSettingsUpdate}
+                    />
+                  </div>
+                )}
+
+                {/* Informative TV Helper Text */}
+                <div className="w-full max-w-5xl mt-6 flex gap-3 p-4 rounded-2xl bg-zinc-950/30 border border-zinc-900">
+                  <Info size={16} className="text-yellow-500 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-zinc-500 leading-relaxed">
+                    This simulator behaves exactly as your physical digital signage TV screen would. Changes to playlist ordering, slide durations, and YouTube toggle update on this screen instantly. Use the configurations menu tabs on the left to customize content in real-time.
+                  </p>
+                </div>
+              </div>
 
               {/* 2. MEDIA UPLOAD & PLAYLIST MANAGER CARD */}
               {activeTab === 'media' && (
@@ -394,9 +405,11 @@ export default function Home() {
                   {settings && (
                     <YouTubeControl
                       url={settings.youtube_url}
+                      playlistsData={settings.youtube_playlists}
                       enabled={settings.youtube_enabled}
                       mute={settings.mute}
                       onUpdate={handleSettingsUpdate}
+                      slideDuration={settings.slide_duration}
                     />
                   )}
                 </div>
@@ -466,6 +479,7 @@ export default function Home() {
           settings={settings}
           isFullscreen={isFullscreen}
           onCloseFullscreen={closeFullscreen}
+          transitionStyle={activeTransitionStyle}
         />
       )}
     </div>

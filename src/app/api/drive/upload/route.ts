@@ -28,7 +28,7 @@ export async function POST(req: Request) {
       scopes: ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive']
     });
 
-    const drive = google.drive({ version: 'v3', auth });
+    const drive = google.drive({ version: 'v3', auth, timeout: 3000 });
 
     // Convert file arrayBuffer to Buffer
     const buffer = Buffer.from(await file.arrayBuffer());

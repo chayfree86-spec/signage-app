@@ -44,7 +44,7 @@ export default function GeneralSettings({
   const [configAlertType, setConfigAlertType] = useState<'success' | 'delete'>('success');
 
   // Google Drive states
-  const [driveConfig, setDriveConfig] = useState<{ configured: boolean; email: string | null; folderId: string | null } | null>(null);
+  const [driveConfig, setDriveConfig] = useState<{ configured: boolean; email: string | null; folderId: string | null; folderName: string | null } | null>(null);
   const [loadingDrive, setLoadingDrive] = useState(true);
 
   useEffect(() => {
@@ -207,42 +207,42 @@ export default function GeneralSettings({
         </div>
 
         {loadingDrive ? (
-          <p className="text-[10px] text-zinc-500 italic">लोड हो रहा है...</p>
+          <p className="text-[10px] text-zinc-500 italic">Loading...</p>
         ) : driveConfig?.configured ? (
           <div className="space-y-2">
             <p className="text-[10.5px] text-zinc-300 leading-relaxed font-medium">
-              Google Drive स्टोरेज सक्रिय है! आपकी सभी अपलोडेड फाइल्स (Images और Videos) सुरक्षित रूप से Google Drive में सेव होंगी।
+              Google Drive storage is active! All your uploaded files (Images and Videos) will be securely saved in Google Drive.
             </p>
-            <div className="p-2 rounded bg-black/40 border border-zinc-900 text-[10px] space-y-1 font-mono text-zinc-400">
-              <div className="flex justify-between items-center gap-2">
-                <span className="text-zinc-500 shrink-0">Service Account Email:</span>
-                <span className="text-yellow-500 font-semibold truncate max-w-[200px]" title={driveConfig.email || ''}>{driveConfig.email}</span>
+            <div className="p-2.5 rounded-lg bg-black/40 border border-zinc-900 text-[10px] space-y-2 font-mono text-zinc-400">
+              <div className="space-y-0.5">
+                <span className="text-zinc-500 text-[9px] uppercase tracking-wider block">Email ID:</span>
+                <span className="text-yellow-500 font-semibold break-all block">chaychaupaltv@gmail.com</span>
               </div>
-              <div className="flex justify-between items-center gap-2">
-                <span className="text-zinc-500 shrink-0">Folder ID:</span>
-                <span className="text-zinc-300 font-semibold truncate max-w-[200px]" title={driveConfig.folderId || ''}>{driveConfig.folderId}</span>
+              <div className="space-y-0.5">
+                <span className="text-zinc-500 text-[9px] uppercase tracking-wider block">Drive Folder:</span>
+                <span className="text-zinc-300 font-semibold break-all block">{driveConfig.folderName || driveConfig.folderId}</span>
               </div>
             </div>
             <div className="p-2.5 bg-yellow-500/5 border border-yellow-500/10 rounded-lg flex gap-2">
               <AlertCircle size={12} className="text-yellow-500 shrink-0 mt-0.5" />
               <p className="text-[9.5px] text-zinc-400 leading-relaxed">
-                <strong className="text-yellow-500">महत्वपूर्ण:</strong> सुनिश्चित करें कि आपने अपने <code className="text-white bg-zinc-950 px-1 py-0.5 rounded border border-zinc-800">chaychaupaltv@gmail.com</code> Google Drive फ़ोल्डर को ऊपर दिए गए Service Account ईमेल के साथ <strong className="text-white">Editor</strong> के रूप में शेयर किया है।
+                <strong className="text-yellow-500">Important:</strong> Ensure that you have shared your <code className="text-white bg-zinc-950 px-1 py-0.5 rounded border border-zinc-800">chaychaupaltv@gmail.com</code> Google Drive folder with the above Service Account email as <strong className="text-white">Editor</strong>.
               </p>
             </div>
           </div>
         ) : (
           <div className="space-y-2.5">
             <p className="text-[10.5px] text-zinc-400 leading-relaxed">
-              Google Drive वर्तमान में सर्वर पर कॉन्फ़िगर नहीं है। फाइल्स लोकल ब्राउज़र की IndexedDB ऑफलाइन स्टोरेज में सेव होंगी।
+              Google Drive is currently not configured on the server. Files will be saved in the local browser's IndexedDB offline storage.
             </p>
             <div className="p-2.5 bg-zinc-950 rounded-lg border border-zinc-900 space-y-2">
-              <span className="text-[9.5px] font-bold text-yellow-500 uppercase tracking-wider block">कनेक्ट करने की विधि (How to Connect Drive):</span>
+              <span className="text-[9.5px] font-bold text-yellow-500 uppercase tracking-wider block">How to Connect Drive:</span>
               <ol className="list-decimal pl-4 text-[9.5px] text-zinc-400 space-y-1.5 leading-relaxed">
-                <li>प्रोजेक्ट रूट में <code className="text-zinc-300 bg-zinc-900 px-1 rounded">.env.example</code> को कॉपी करके <code className="text-zinc-300 bg-zinc-900 px-1 rounded">.env.local</code> बनाएं।</li>
-                <li>Google Cloud Console पर एक Service Account बनाकर JSON की (Key) फाइल डाउनलोड करें।</li>
-                <li>JSON की फ़ाइल से <code className="text-zinc-300">client_email</code> और <code className="text-zinc-300">private_key</code> को <code className="text-zinc-300">.env.local</code> में क्रमशः <code className="text-yellow-500/90 font-mono">GOOGLE_SERVICE_ACCOUNT_EMAIL</code> और <code className="text-yellow-500/90 font-mono">GOOGLE_PRIVATE_KEY</code> में डालें।</li>
-                <li>अपने Google Drive (<strong className="text-white">chaychaupaltv@gmail.com</strong>) में एक नया फ़ोल्डर बनाएं और उसे इस Service Account ईमेल के साथ <strong className="text-white">Editor</strong> के रूप में शेयर करें।</li>
-                <li>फ़ोल्डर की URL से ID को <code className="text-yellow-500/90 font-mono">GOOGLE_DRIVE_FOLDER_ID</code> में पेस्ट करें और सर्वर को रीस्टार्ट करें!</li>
+                <li>Copy <code className="text-zinc-300 bg-zinc-900 px-1 rounded">.env.example</code> in the project root to create <code className="text-zinc-300 bg-zinc-900 px-1 rounded">.env.local</code>.</li>
+                <li>Create a Service Account on Google Cloud Console and download the JSON credentials file.</li>
+                <li>Paste the <code className="text-zinc-300">client_email</code> and <code className="text-zinc-300">private_key</code> from the JSON file into <code className="text-zinc-300">.env.local</code> as <code className="text-yellow-500/90 font-mono">GOOGLE_SERVICE_ACCOUNT_EMAIL</code> and <code className="text-yellow-500/90 font-mono">GOOGLE_PRIVATE_KEY</code> respectively.</li>
+                <li>Create a new folder in your Google Drive (<strong className="text-white">chaychaupaltv@gmail.com</strong>) and share it with the Service Account email as <strong className="text-white">Editor</strong>.</li>
+                <li>Paste the folder ID from the folder URL into <code className="text-yellow-500/90 font-mono">GOOGLE_DRIVE_FOLDER_ID</code> and restart the server!</li>
               </ol>
             </div>
           </div>
