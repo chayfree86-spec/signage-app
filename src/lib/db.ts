@@ -124,7 +124,7 @@ async function deleteLocalFile(id: string): Promise<void> {
 }
 
 // Helper to save metadata in IndexedDB
-async function saveLocalMeta(meta: Omit<MediaItem, 'url'>): Promise<void> {
+async function saveLocalMeta(meta: MediaItem | Omit<MediaItem, 'url'>): Promise<void> {
   const db = await getIDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction('media_meta', 'readwrite');
@@ -136,7 +136,7 @@ async function saveLocalMeta(meta: Omit<MediaItem, 'url'>): Promise<void> {
 }
 
 // Helper to get all metadata from IndexedDB
-async function getLocalMetaList(): Promise<Omit<MediaItem, 'url'>[]> {
+async function getLocalMetaList(): Promise<(MediaItem | Omit<MediaItem, 'url'>)[]> {
   const db = await getIDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction('media_meta', 'readonly');
@@ -300,6 +300,14 @@ export async function fetchMedia(): Promise<MediaItem[]> {
     const listWithUrls: MediaItem[] = [];
 
     for (const meta of metaList) {
+      // Check if it's a remote/stream URL (like Google Drive proxy or external mock URL)
+      const hasRemoteUrl = 'url' in meta && (meta.url?.startsWith('/api/drive/') || meta.url?.startsWith('http'));
+      
+      if (hasRemoteUrl) {
+        listWithUrls.push(meta as MediaItem);
+        continue;
+      }
+
       const blob = await getLocalFile(meta.id);
       if (blob) {
         const url = makeBlobUrl(meta.id, blob);
@@ -307,7 +315,7 @@ export async function fetchMedia(): Promise<MediaItem[]> {
           ...meta,
           url,
           localBlob: blob,
-        });
+        } as MediaItem);
       } else {
         // Metadata exists but file is missing - let's cleanup
         await deleteLocalMeta(meta.id);
@@ -320,7 +328,80 @@ export async function fetchMedia(): Promise<MediaItem[]> {
   }
 }
 
+export async function checkGoogleDriveConfigured(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  try {
+    const res = await fetch('/api/drive/status');
+    const data = await res.json();
+    return !!data.configured;
+  } catch {
+    return false;
+  }
+}
+
 export async function uploadMediaItem(file: File): Promise<MediaItem> {
+  const isDriveConfigured = await checkGoogleDriveConfigured();
+
+  if (isDriveConfigured) {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/drive/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        throw new Error(await res.text() || 'Failed to upload to Google Drive');
+      }
+
+      const data = await res.json();
+      if (!data.success || !data.file) {
+        throw new Error('Invalid response from Google Drive upload API');
+      }
+
+      const driveFile = data.file;
+
+      // Find next position index
+      const list = await fetchMedia();
+      const position = list.length > 0 ? Math.max(...list.map(m => m.position)) + 1 : 0;
+
+      const mediaItem: MediaItem = {
+        id: driveFile.id,
+        type: driveFile.type,
+        url: driveFile.url,
+        name: driveFile.name,
+        size: driveFile.size,
+        position,
+        active: true,
+        created_at: driveFile.created_at,
+      };
+
+      // Save metadata in Supabase (if connected)
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        try {
+          const { error: dbError } = await supabase
+            .from('media')
+            .insert([mediaItem]);
+
+          if (dbError) throw dbError;
+          return mediaItem;
+        } catch (supabaseError) {
+          console.warn('Google Drive media metadata sync to Supabase failed, saving locally:', supabaseError);
+        }
+      }
+
+      // Local fallback for metadata: save in IndexedDB
+      await saveLocalMeta(mediaItem);
+      return mediaItem;
+
+    } catch (e) {
+      console.warn('Google Drive upload failed, falling back to standard storage methods:', e);
+    }
+  }
+
   const id = crypto.randomUUID();
   const type: 'image' | 'video' = file.type.startsWith('video/') ? 'video' : 'image';
   const name = file.name;
@@ -512,6 +593,43 @@ export async function updatePlaylistOrder(orderedIds: string[]): Promise<void> {
 export async function fetchPlaylists(): Promise<Playlist[]> {
   if (typeof window === 'undefined') return [];
 
+  // Try fetching from Google Drive first if configured
+  const isDriveConfigured = await checkGoogleDriveConfigured();
+  if (isDriveConfigured) {
+    try {
+      window.dispatchEvent(new CustomEvent('playlists-syncing'));
+      const res = await fetch('/api/drive/playlist');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.playlists) {
+          const parsed = data.playlists as Playlist[];
+          
+          // Dynamic regeneration of Blob URLs for all local files in playlists
+          // to resolve broken thumbnails on browser page reloads
+          for (const playlist of parsed) {
+            for (const item of playlist.items) {
+              const blob = await getLocalFile(item.id);
+              if (blob) {
+                item.url = makeBlobUrl(item.id, blob);
+                item.localBlob = blob;
+              }
+            }
+          }
+          
+          // Save to local storage cache
+          localStorage.setItem('signage_playlists', JSON.stringify(parsed));
+          window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { success: true } }));
+          return parsed;
+        }
+      }
+      window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { success: false } }));
+    } catch (e) {
+      console.warn('Failed to fetch playlists from Google Drive, falling back to local cache:', e);
+      window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { success: false } }));
+    }
+  }
+
+  // Fallback to localStorage
   const saved = localStorage.getItem('signage_playlists');
   if (saved) {
     try {
@@ -549,12 +667,41 @@ export async function fetchPlaylists(): Promise<Playlist[]> {
 
   const initialList = [defaultPlaylist];
   localStorage.setItem('signage_playlists', JSON.stringify(initialList));
+  
+  // If drive is active, sync the initial seeded list to Drive in background
+  if (isDriveConfigured) {
+    savePlaylists(initialList);
+  }
+  
   return initialList;
 }
 
 export function savePlaylists(playlists: Playlist[]): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem('signage_playlists', JSON.stringify(playlists));
+  
+  // Asynchronous background sync to Google Drive if configured
+  checkGoogleDriveConfigured().then(configured => {
+    if (configured) {
+      window.dispatchEvent(new CustomEvent('playlists-syncing'));
+      
+      fetch('/api/drive/playlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playlists }),
+      }).then(res => {
+        if (!res.ok) {
+          throw new Error('Failed to sync to Google Drive');
+        }
+        return res.json();
+      }).then(data => {
+        window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { success: true, message: data.message } }));
+      }).catch(err => {
+        console.error('Error syncing playlists to Google Drive:', err);
+        window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { success: false, error: err.message } }));
+      });
+    }
+  });
 }
 
 export function resolveActivePlaylist(playlists: Playlist[]): Playlist | null {

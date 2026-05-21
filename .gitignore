@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# credentials and google service keys
+*-ca7cf5efc3ec.json
+signage-app-*.json
+*.key
+credentials*.json
+

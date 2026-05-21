@@ -14,7 +14,8 @@ import {
   Settings,
   HelpCircle,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  HardDrive
 } from 'lucide-react';
 import { getSupabaseConfig, saveSupabaseConfig, clearSupabaseConfig } from '@/lib/supabase';
 
@@ -42,11 +43,15 @@ export default function GeneralSettings({
   const [showConfigAlert, setShowConfigAlert] = useState(false);
   const [configAlertType, setConfigAlertType] = useState<'success' | 'delete'>('success');
 
+  // Google Drive states
+  const [driveConfig, setDriveConfig] = useState<{ configured: boolean; email: string | null; folderId: string | null } | null>(null);
+  const [loadingDrive, setLoadingDrive] = useState(true);
+
   useEffect(() => {
     setDurationInput(slideDuration);
   }, [slideDuration]);
 
-  // Load current cloud config on mount
+  // Load current cloud config and drive status on mount
   useEffect(() => {
     const config = getSupabaseConfig();
     if (config) {
@@ -58,7 +63,22 @@ export default function GeneralSettings({
       setDbAnonKey('');
       setIsCloudConfigured(false);
     }
+
+    fetchDriveStatus();
   }, []);
+
+  const fetchDriveStatus = async () => {
+    try {
+      setLoadingDrive(true);
+      const res = await fetch('/api/drive/status');
+      const data = await res.json();
+      setDriveConfig(data);
+    } catch (err) {
+      console.error('Failed to load Google Drive status:', err);
+    } finally {
+      setLoadingDrive(false);
+    }
+  };
 
   const handleDurationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = Number(e.target.value);
@@ -164,6 +184,69 @@ export default function GeneralSettings({
             </>
           )}
         </button>
+      </div>
+
+      {/* Premium Google Drive Connection Status Card */}
+      <div className="p-3.5 rounded-xl bg-zinc-950/40 border border-zinc-900 space-y-3">
+        <div className="flex items-center justify-between border-b border-zinc-900 pb-2">
+          <div className="flex items-center gap-1.5">
+            <HardDrive size={13} className={driveConfig?.configured ? 'text-yellow-500' : 'text-zinc-500'} />
+            <span className="text-xs font-semibold text-white">Google Drive integration</span>
+          </div>
+          {loadingDrive ? (
+            <div className="w-3 h-3 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
+              driveConfig?.configured 
+                ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' 
+                : 'bg-zinc-900 border border-zinc-800 text-zinc-500'
+            }`}>
+              {driveConfig?.configured ? 'CONNECTED' : 'NOT CONFIGURED'}
+            </span>
+          )}
+        </div>
+
+        {loadingDrive ? (
+          <p className="text-[10px] text-zinc-500 italic">लोड हो रहा है...</p>
+        ) : driveConfig?.configured ? (
+          <div className="space-y-2">
+            <p className="text-[10.5px] text-zinc-300 leading-relaxed font-medium">
+              Google Drive स्टोरेज सक्रिय है! आपकी सभी अपलोडेड फाइल्स (Images और Videos) सुरक्षित रूप से Google Drive में सेव होंगी।
+            </p>
+            <div className="p-2 rounded bg-black/40 border border-zinc-900 text-[10px] space-y-1 font-mono text-zinc-400">
+              <div className="flex justify-between items-center gap-2">
+                <span className="text-zinc-500 shrink-0">Service Account Email:</span>
+                <span className="text-yellow-500 font-semibold truncate max-w-[200px]" title={driveConfig.email || ''}>{driveConfig.email}</span>
+              </div>
+              <div className="flex justify-between items-center gap-2">
+                <span className="text-zinc-500 shrink-0">Folder ID:</span>
+                <span className="text-zinc-300 font-semibold truncate max-w-[200px]" title={driveConfig.folderId || ''}>{driveConfig.folderId}</span>
+              </div>
+            </div>
+            <div className="p-2.5 bg-yellow-500/5 border border-yellow-500/10 rounded-lg flex gap-2">
+              <AlertCircle size={12} className="text-yellow-500 shrink-0 mt-0.5" />
+              <p className="text-[9.5px] text-zinc-400 leading-relaxed">
+                <strong className="text-yellow-500">महत्वपूर्ण:</strong> सुनिश्चित करें कि आपने अपने <code className="text-white bg-zinc-950 px-1 py-0.5 rounded border border-zinc-800">chaychaupaltv@gmail.com</code> Google Drive फ़ोल्डर को ऊपर दिए गए Service Account ईमेल के साथ <strong className="text-white">Editor</strong> के रूप में शेयर किया है।
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            <p className="text-[10.5px] text-zinc-400 leading-relaxed">
+              Google Drive वर्तमान में सर्वर पर कॉन्फ़िगर नहीं है। फाइल्स लोकल ब्राउज़र की IndexedDB ऑफलाइन स्टोरेज में सेव होंगी।
+            </p>
+            <div className="p-2.5 bg-zinc-950 rounded-lg border border-zinc-900 space-y-2">
+              <span className="text-[9.5px] font-bold text-yellow-500 uppercase tracking-wider block">कनेक्ट करने की विधि (How to Connect Drive):</span>
+              <ol className="list-decimal pl-4 text-[9.5px] text-zinc-400 space-y-1.5 leading-relaxed">
+                <li>प्रोजेक्ट रूट में <code className="text-zinc-300 bg-zinc-900 px-1 rounded">.env.example</code> को कॉपी करके <code className="text-zinc-300 bg-zinc-900 px-1 rounded">.env.local</code> बनाएं।</li>
+                <li>Google Cloud Console पर एक Service Account बनाकर JSON की (Key) फाइल डाउनलोड करें।</li>
+                <li>JSON की फ़ाइल से <code className="text-zinc-300">client_email</code> और <code className="text-zinc-300">private_key</code> को <code className="text-zinc-300">.env.local</code> में क्रमशः <code className="text-yellow-500/90 font-mono">GOOGLE_SERVICE_ACCOUNT_EMAIL</code> और <code className="text-yellow-500/90 font-mono">GOOGLE_PRIVATE_KEY</code> में डालें।</li>
+                <li>अपने Google Drive (<strong className="text-white">chaychaupaltv@gmail.com</strong>) में एक नया फ़ोल्डर बनाएं और उसे इस Service Account ईमेल के साथ <strong className="text-white">Editor</strong> के रूप में शेयर करें।</li>
+                <li>फ़ोल्डर की URL से ID को <code className="text-yellow-500/90 font-mono">GOOGLE_DRIVE_FOLDER_ID</code> में पेस्ट करें और सर्वर को रीस्टार्ट करें!</li>
+              </ol>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Premium Supabase credentials control center */}

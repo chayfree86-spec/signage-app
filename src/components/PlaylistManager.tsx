@@ -421,6 +421,38 @@ export default function PlaylistManager({
   
   // Custom media visual editor modal state
   const [editingItem, setEditingItem] = useState<MediaItem | null>(null);
+
+  // Google Drive background synchronization state
+  const [syncState, setSyncState] = useState<'synced' | 'syncing' | 'error' | 'idle'>('idle');
+  const [syncMessage, setSyncMessage] = useState('');
+
+  useEffect(() => {
+    const handleSyncing = () => {
+      setSyncState('syncing');
+    };
+    const handleSynced = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && customEvent.detail.success) {
+        setSyncState('synced');
+        setSyncMessage(customEvent.detail.message || 'Synced to Google Drive');
+        const timer = setTimeout(() => setSyncState('idle'), 3000); // Clear after 3s
+        return () => clearTimeout(timer);
+      } else {
+        setSyncState('error');
+        setSyncMessage(customEvent.detail?.error || 'Sync failed');
+        const timer = setTimeout(() => setSyncState('idle'), 5000);
+        return () => clearTimeout(timer);
+      }
+    };
+
+    window.addEventListener('playlists-syncing', handleSyncing);
+    window.addEventListener('playlists-synced', handleSynced);
+
+    return () => {
+      window.removeEventListener('playlists-syncing', handleSyncing);
+      window.removeEventListener('playlists-synced', handleSynced);
+    };
+  }, []);
   
   // Clear selection state when switching playlists
   useEffect(() => {
@@ -925,11 +957,31 @@ export default function PlaylistManager({
       {!selectedPlaylistId ? (
         <div className="space-y-4 animate-fadeIn">
           <div className="flex items-center justify-between">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">
-                Multi-Playlist Storage
-              </span>
-              <p className="text-xs text-zinc-400">Create, manage, and schedule distinct layouts</p>
+            <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">
+                  Multi-Playlist Storage
+                </span>
+                <p className="text-xs text-zinc-400">Create, manage, and schedule distinct layouts</p>
+              </div>
+
+              {/* Google Drive Playlist Sync Indicator */}
+              {syncState !== 'idle' && (
+                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[9px] font-bold border backdrop-blur-sm animate-fadeIn shrink-0 ${
+                  syncState === 'syncing' 
+                    ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-500' 
+                    : syncState === 'synced'
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                    : 'bg-red-500/10 border-red-500/30 text-red-400'
+                }`}>
+                  {syncState === 'syncing' && <Loader2 size={11} className="animate-spin text-yellow-500" />}
+                  {syncState === 'synced' && <Check size={11} className="text-emerald-400" />}
+                  {syncState === 'error' && <AlertCircle size={11} className="text-red-400" />}
+                  <span className="uppercase tracking-wider font-extrabold text-[8px]">
+                    {syncState === 'syncing' ? 'Drive Syncing...' : syncState === 'synced' ? 'Drive Synced!' : 'Sync Failed'}
+                  </span>
+                </div>
+              )}
             </div>
             
             <button
@@ -1021,6 +1073,21 @@ export default function PlaylistManager({
                     <span className="flex items-center gap-1 text-[8.5px] font-black uppercase tracking-widest text-emerald-500 bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-900/50 status-pulse shrink-0">
                       <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
                       Online Live
+                    </span>
+                  )}
+
+                  {syncState !== 'idle' && (
+                    <span className={`flex items-center gap-1 text-[8.5px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border shrink-0 ${
+                      syncState === 'syncing' 
+                        ? 'bg-yellow-500/10 border-yellow-500/40 text-yellow-500' 
+                        : syncState === 'synced'
+                        ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-450'
+                        : 'bg-red-500/10 border-red-500/40 text-red-450'
+                    }`}>
+                      {syncState === 'syncing' && <Loader2 size={10} className="animate-spin" />}
+                      {syncState === 'synced' && <Check size={10} />}
+                      {syncState === 'error' && <AlertCircle size={10} />}
+                      <span>{syncState === 'syncing' ? 'Syncing...' : syncState === 'synced' ? 'Synced' : 'Failed'}</span>
                     </span>
                   )}
                 </div>
