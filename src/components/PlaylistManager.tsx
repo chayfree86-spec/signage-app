@@ -21,7 +21,8 @@ import {
   FolderOpen,
   Lock,
   X,
-  ChevronDown
+  ChevronDown,
+  Sparkles
 } from 'lucide-react';
 import { 
   DndContext, 
@@ -60,6 +61,8 @@ interface SortablePlaylistMediaCardProps {
   isSelected: boolean;
   onToggleSelect: (id: string, checked: boolean) => void;
   onEditImage: (item: MediaItem) => void;
+  isPlaying?: boolean;
+  progressPercent?: number;
 }
 
 function SortablePlaylistMediaCard({ 
@@ -69,7 +72,9 @@ function SortablePlaylistMediaCard({
   onUpdateItemDetails,
   isSelected,
   onToggleSelect,
-  onEditImage
+  onEditImage,
+  isPlaying = false,
+  progressPercent = 0
 }: SortablePlaylistMediaCardProps) {
   const {
     attributes,
@@ -107,10 +112,12 @@ function SortablePlaylistMediaCard({
           setIsEditing(true);
         }
       }}
-      className={`group relative flex flex-col gap-3.5 p-3 rounded-2xl transition-all duration-300 select-none cursor-pointer ${
-        item.active 
-          ? 'glass-panel bg-zinc-900/50 border border-zinc-800/80 hover:border-yellow-500/20' 
-          : 'bg-zinc-950/20 border border-zinc-900/40 opacity-55 hover:opacity-80'
+      className={`group relative flex flex-col gap-3.5 p-3 rounded-2xl transition-all duration-300 select-none cursor-pointer overflow-hidden ${
+        isPlaying
+          ? 'glass-panel bg-yellow-500/5 border border-yellow-500/40 shadow-lg shadow-yellow-500/5 ring-1 ring-yellow-500/20'
+          : item.active 
+            ? 'glass-panel bg-zinc-900/50 border border-zinc-800/80 hover:border-yellow-500/20' 
+            : 'bg-zinc-950/20 border border-zinc-900/40 opacity-55 hover:opacity-80'
       }`}
     >
       <div className="flex items-center gap-3">
@@ -142,7 +149,9 @@ function SortablePlaylistMediaCard({
             e.stopPropagation();
             onEditImage(item);
           }}
-          className="relative w-16 h-11 bg-black rounded-lg overflow-hidden border border-zinc-850 flex items-center justify-center shrink-0 cursor-pointer hover:border-yellow-500 hover:ring-2 hover:ring-yellow-500/20 transition-all group/thumb"
+          className={`relative w-12 h-12 bg-black rounded-lg overflow-hidden border flex items-center justify-center shrink-0 cursor-pointer hover:border-yellow-500 hover:ring-2 hover:ring-yellow-500/20 transition-all group/thumb ${
+            isPlaying ? 'border-yellow-500 ring-2 ring-yellow-500/30' : 'border-zinc-850'
+          }`}
           title="Click to Replace or Switch Media"
         >
           {item.type === 'video' ? (
@@ -154,6 +163,12 @@ function SortablePlaylistMediaCard({
             </>
           ) : (
             <img src={item.url} alt={item.name} className="w-full h-full object-cover group-hover/thumb:scale-105 transition-transform" />
+          )}
+          {isPlaying && (
+            <div className="absolute top-0.5 left-0.5 z-10 px-1 py-0.5 rounded bg-emerald-500/90 text-[7px] font-black text-white tracking-widest uppercase animate-pulse flex items-center gap-0.5 shadow-md">
+              <span className="w-1 h-1 rounded-full bg-white animate-ping" />
+              LIVE
+            </div>
           )}
           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition-opacity">
             <RotateCw size={12} className="text-yellow-500 animate-spin-slow" />
@@ -180,6 +195,11 @@ function SortablePlaylistMediaCard({
           ) : (
             <div className="flex items-center gap-1.5 group/name">
               <p className="text-xs font-semibold text-zinc-200 truncate">{item.name}</p>
+              {isPlaying && (
+                <span className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/30 text-[8px] font-extrabold text-yellow-500 tracking-wider shadow-sm animate-pulse">
+                  PLAYING
+                </span>
+              )}
               <button 
                 onClick={() => {
                   setEditedName(item.name);
@@ -244,6 +264,16 @@ function SortablePlaylistMediaCard({
           </div>
         </div>
       )}
+
+      {/* Progress Bar */}
+      {isPlaying && (
+        <div className="absolute bottom-0 inset-x-0 h-1 bg-zinc-950/60 z-20">
+          <div 
+            className="h-full bg-gradient-to-r from-yellow-500 to-amber-500 shadow-[0_0_8px_rgba(250,204,21,0.5)] transition-all duration-200 ease-linear"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -261,7 +291,7 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({
   onToggleActive,
   onDelete
 }) => {
-  const slideshowItems = playlist.items.filter(item => item.active && item.type === 'image');
+  const slideshowItems = playlist.items.filter(item => item.active && (item.type === 'image' || item.type === 'video'));
   const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
@@ -275,30 +305,44 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({
   return (
     <div
       onClick={onSelect}
-      className={`group glass-panel rounded-2xl p-4.5 border transition-all duration-500 flex flex-col justify-between min-h-[260px] cursor-pointer hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(250,204,21,0.06)] hover:border-yellow-500/20 ${
+      className={`group glass-panel rounded-2xl p-4 border transition-all duration-500 flex flex-col justify-between aspect-square cursor-pointer hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(250,204,21,0.06)] hover:border-yellow-500/20 ${
         playlist.is_online 
           ? 'border-yellow-500/35 shadow-[0_0_20px_rgba(250,204,21,0.04)] bg-zinc-900/55' 
           : 'border-zinc-900 hover:border-zinc-800 hover:bg-zinc-900/10'
       }`}
     >
-      <div className="space-y-3.5">
+      <div className="flex flex-col gap-3 min-h-0">
         {/* Aspect Ratio Box with Auto Image Slide */}
-        <div className="relative overflow-hidden aspect-[2.3/1] rounded-xl border border-zinc-950/60 bg-zinc-950/80 group-hover:border-zinc-800/80 transition-colors">
+        <div className="relative overflow-hidden aspect-[1.65] rounded-xl border border-zinc-950/60 bg-zinc-950/80 group-hover:border-zinc-800/80 transition-colors shrink-0">
           {slideshowItems.length > 0 ? (
             slideshowItems.map((item, idx) => (
-              <img
-                key={item.id}
-                src={item.url}
-                alt={item.name}
-                className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 group-hover:scale-105 transition-transform duration-700 ${
-                  idx === currentIndex ? 'opacity-100' : 'opacity-0'
-                }`}
-              />
+              item.type === 'video' ? (
+                <video
+                  key={item.id}
+                  src={item.url}
+                  className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 group-hover:scale-105 transition-transform duration-700 ${
+                    idx === currentIndex ? 'opacity-100' : 'opacity-0'
+                  }`}
+                  muted
+                  autoPlay
+                  loop
+                  playsInline
+                />
+              ) : (
+                <img
+                  key={item.id}
+                  src={item.url}
+                  alt={item.name}
+                  className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 group-hover:scale-105 transition-transform duration-700 ${
+                    idx === currentIndex ? 'opacity-100' : 'opacity-0'
+                  }`}
+                />
+              )
             ))
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-zinc-950 to-zinc-900/50 text-zinc-600 p-3 select-none">
               <ImageIcon size={18} className="text-zinc-850 mb-1" />
-              <span className="text-[8.5px] uppercase font-bold tracking-wider text-zinc-650">No active images</span>
+              <span className="text-[8.5px] uppercase font-bold tracking-wider text-zinc-650">No active files</span>
             </div>
           )}
 
@@ -324,7 +368,7 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({
         </div>
 
         {/* Info */}
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 min-h-0">
           <div className="flex items-start justify-between gap-2.5">
             <div className="flex flex-col min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -333,7 +377,7 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({
                 </h3>
                 {playlist.is_online && (
                   <span className="flex items-center gap-0.5 text-[7px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-950/50 px-1.5 py-0.5 rounded-full border border-emerald-900/40 status-pulse">
-                    <span className="w-1 h-1 bg-emerald-400 rounded-full" />
+                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full" />
                     Live
                   </span>
                 )}
@@ -346,7 +390,7 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({
                 e.stopPropagation(); // Prevent opening editor!
                 onToggleActive(!playlist.active);
               }}
-              className={`px-2.5 py-0.5 rounded-lg border text-[8px] font-black uppercase tracking-widest cursor-pointer transition-all ${
+              className={`px-2.5 py-0.5 rounded-lg border text-[8px] font-black uppercase tracking-widest cursor-pointer transition-all shrink-0 ${
                 playlist.active 
                   ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-500 hover:bg-yellow-500/20' 
                   : 'bg-zinc-950/40 border-zinc-900/60 text-zinc-550 hover:text-zinc-400'
@@ -375,7 +419,7 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({
       </div>
 
       {/* Footer Action Links */}
-      <div className="flex items-center justify-between gap-2.5 mt-3 pt-2.5 border-t border-zinc-900/50">
+      <div className="flex items-center justify-between gap-2.5 pt-2.5 border-t border-zinc-900/50">
         <span className="flex items-center gap-1 text-[9.5px] text-yellow-500 font-extrabold uppercase tracking-wider group-hover:text-white transition-colors">
           <FolderOpen size={12} className="shrink-0" />
           <span>Manage Queue</span>
@@ -426,6 +470,35 @@ export default function PlaylistManager({
   const [syncState, setSyncState] = useState<'synced' | 'syncing' | 'error' | 'idle'>('idle');
   const [syncMessage, setSyncMessage] = useState('');
 
+  // Signage player status sync state
+  const [playingState, setPlayingState] = useState<{ itemId: string | null; progress: number }>({ itemId: null, progress: 0 });
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return;
+    const channel = new window.BroadcastChannel('signage_play_status');
+    let timeoutId: NodeJS.Timeout | null = null;
+
+    const handleMessage = (e: MessageEvent) => {
+      if (e.data && typeof e.data === 'object') {
+        setPlayingState({
+          itemId: e.data.itemId || null,
+          progress: e.data.progress || 0
+        });
+
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          setPlayingState({ itemId: null, progress: 0 });
+        }, 1500);
+      }
+    };
+    channel.addEventListener('message', handleMessage);
+    return () => {
+      channel.removeEventListener('message', handleMessage);
+      if (timeoutId) clearTimeout(timeoutId);
+      channel.close();
+    };
+  }, []);
+
   useEffect(() => {
     const handleSyncing = () => {
       setSyncState('syncing');
@@ -439,9 +512,14 @@ export default function PlaylistManager({
         return () => clearTimeout(timer);
       } else {
         setSyncState('error');
-        setSyncMessage(customEvent.detail?.error || 'Sync failed');
-        const timer = setTimeout(() => setSyncState('idle'), 5000);
-        return () => clearTimeout(timer);
+        const errMsg = customEvent.detail?.error || 'Sync failed';
+        setSyncMessage(errMsg);
+        
+        // Only auto-clear error state if it's NOT a quota error
+        if (!errMsg.includes('SERVICE_ACCOUNT_QUOTA_ERROR')) {
+          const timer = setTimeout(() => setSyncState('idle'), 5000);
+          return () => clearTimeout(timer);
+        }
       }
     };
 
@@ -951,6 +1029,66 @@ export default function PlaylistManager({
   return (
     <div className="w-full flex flex-col gap-5">
       
+      {/* Premium Error Alert Banner */}
+      {syncState === 'error' && syncMessage && (
+        <div className="glass-panel border-red-500/20 bg-red-950/10 p-5 rounded-2xl flex flex-col gap-3.5 animate-fadeIn relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-red-500 to-rose-600" />
+          <button 
+            onClick={() => setSyncState('idle')}
+            className="absolute top-4 right-4 p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/40 transition-all cursor-pointer"
+          >
+            <X size={15} />
+          </button>
+          
+          <div className="flex items-start gap-3.5 pr-6">
+            <div className="p-2 bg-red-500/10 rounded-xl text-red-400 shrink-0">
+              <AlertCircle size={20} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                Google Drive Sync Blocked
+              </h4>
+              {syncMessage.includes('SERVICE_ACCOUNT_QUOTA_ERROR') ? (
+                <div className="text-xs text-zinc-300 space-y-2.5 mt-1 leading-relaxed">
+                  <p>
+                    Your playlist file (<code>playlist.json</code>) could not be synced to <strong>Google Drive</strong> because, according to Google's policy, a Service Account's storage quota is <strong>0 bytes</strong>.
+                  </p>
+                  <p className="text-yellow-500 font-medium">
+                    To fix this, please complete the following simple steps:
+                  </p>
+                  <ol className="list-decimal pl-4 space-y-1.5 text-zinc-450 font-medium">
+                    <li>
+                      Go to your Google Drive folder (logged in as <strong>chaychaupaltv@gmail.com</strong>):{" "}
+                      <a 
+                        href="https://drive.google.com/drive/folders/1qRbqF0gFQSSuRb1Ons1_tF4tWlEt8C6y" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-yellow-500 underline hover:text-yellow-400 font-bold"
+                      >
+                        Open Drive Folder
+                      </a>
+                    </li>
+                    <li>
+                      Create an empty file there named <strong><code>playlist.json</code></strong>. (You can create an empty file on your computer and upload it to the Drive folder).
+                    </li>
+                    <li>
+                      By doing this, you will become the <strong>Owner</strong> of the file, and it will use your personal 15 GB free quota instead of the service account's 0-byte quota.
+                    </li>
+                  </ol>
+                  <p className="text-[11px] text-zinc-500 italic mt-2">
+                    Note: After creating the file, make any change to the playlist; sync will automatically resume.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-zinc-450 mt-1 leading-relaxed">
+                  {syncMessage.replace('SERVICE_ACCOUNT_QUOTA_ERROR: ', '')}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* ----------------------------------------------------
           STATE 1: MAIN PLAYLISTS OVERVIEW
           ---------------------------------------------------- */}
@@ -1237,6 +1375,44 @@ export default function PlaylistManager({
                   </div>
                 )}
               </div>
+
+              {/* Themed Transition Selection Card */}
+              <div className="glass-panel rounded-3xl p-5 border border-zinc-900/80 space-y-4 animate-fadeIn">
+                <div className="flex items-center gap-2 border-b border-zinc-900 pb-3">
+                  <Sparkles size={16} className="text-yellow-500" />
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">Transition Effect</span>
+                </div>
+                
+                <div className="flex flex-col gap-2">
+                  <label className="text-[10px] text-zinc-450 uppercase font-bold tracking-wider select-none">
+                    Select transition style
+                  </label>
+                  
+                  <div className="relative">
+                    <select
+                      value={managedPlaylist?.transition_style || 'fade-scale'}
+                      onChange={(e) => handleUpdateSchedule({ transition_style: e.target.value as any })}
+                      className="w-full bg-zinc-950 border border-zinc-900 rounded-xl text-zinc-300 px-3.5 py-2.5 outline-none focus:border-yellow-500/50 transition-all font-medium text-xs appearance-none hover:border-zinc-800 cursor-pointer"
+                    >
+                      <option value="fade-scale">Fade + Scale (Default)</option>
+                      <option value="fade">Simple Fade</option>
+                      <option value="slide-left">Slide Left</option>
+                      <option value="slide-right">Slide Right</option>
+                      <option value="slide-up">Slide Up</option>
+                      <option value="zoom">Zoom In</option>
+                      <option value="rotate">Rotate & Zoom</option>
+                    </select>
+                    {/* Themed Custom Dropdown Arrow */}
+                    <div className="absolute inset-y-0 right-3.5 flex items-center pointer-events-none text-zinc-500">
+                      <ChevronDown size={14} />
+                    </div>
+                  </div>
+                  
+                  <p className="text-[9.5px] text-zinc-550 leading-relaxed mt-1">
+                    Choose how slides transition between each other on the TV display. Updates instantly on active screens!
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* RIGHT COLUMN: MEDIA PLAYLIST ITEMS & UPLOAD (takes 8 columns) */}
@@ -1380,7 +1556,7 @@ export default function PlaylistManager({
                                   : 'bg-zinc-900/30 border-zinc-850/80 hover:border-yellow-500/20 hover:bg-zinc-900/50'
                               }`}
                             >
-                              <div className="relative w-14 h-10 bg-black rounded-lg overflow-hidden shrink-0 border border-zinc-950">
+                              <div className="relative w-12 h-12 bg-black rounded-lg overflow-hidden shrink-0 border border-zinc-950">
                                 {asset.type === 'video' ? (
                                   <video src={asset.url} className="w-full h-full object-cover" muted />
                                 ) : (
@@ -1449,6 +1625,8 @@ export default function PlaylistManager({
                           isSelected={selectedItemIds.includes(item.id)}
                           onToggleSelect={handleToggleSelectItem}
                           onEditImage={setEditingItem}
+                          isPlaying={playingState.itemId === item.id}
+                          progressPercent={playingState.progress}
                         />
                       ))}
                     </div>
@@ -1587,7 +1765,7 @@ export default function PlaylistManager({
                         }`}
                       >
                         {/* Thumbnail */}
-                        <div className="relative w-16 h-12 bg-black rounded-xl overflow-hidden shrink-0 border border-zinc-900">
+                        <div className="relative w-12 h-12 bg-black rounded-xl overflow-hidden shrink-0 border border-zinc-900">
                           {asset.type === 'video' ? (
                             <video src={asset.url} className="w-full h-full object-cover" muted />
                           ) : (

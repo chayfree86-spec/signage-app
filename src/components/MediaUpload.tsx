@@ -93,7 +93,7 @@ function SortableMediaCard({ item, onDelete, onToggleActive }: SortableItemProps
       </div>
 
       {/* Media Thumbnail Container */}
-      <div className="relative w-16 h-12 bg-black rounded-lg overflow-hidden border border-zinc-850 flex items-center justify-center shrink-0">
+      <div className="relative w-12 h-12 bg-black rounded-lg overflow-hidden border border-zinc-850 flex items-center justify-center shrink-0">
         {item.type === 'video' ? (
           <>
             <video 

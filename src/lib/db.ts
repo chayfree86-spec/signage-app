@@ -34,6 +34,21 @@ export interface Playlist {
   schedule_end_time?: string; // HH:MM
   items: MediaItem[];
   created_at: string;
+  transition_style?: 'fade-scale' | 'fade' | 'slide-left' | 'slide-right' | 'slide-up' | 'zoom' | 'rotate';
+}
+
+export interface YouTubeItem {
+  id: string;
+  url: string;
+  enabled: boolean;
+}
+
+export interface YouTubePlaylist {
+  id: string;
+  name: string;
+  active: boolean;
+  items: YouTubeItem[];
+  created_at: string;
 }
 
 export interface SignageSettings {
@@ -45,6 +60,8 @@ export interface SignageSettings {
   qr_size: number;
   slide_duration: number;
   mute: boolean;
+  youtube_active_id?: string;
+  youtube_playlists?: string;
 }
 
 const DEFAULT_SETTINGS: SignageSettings = {
@@ -56,6 +73,8 @@ const DEFAULT_SETTINGS: SignageSettings = {
   qr_size: 120,
   slide_duration: 8,
   mute: true,
+  youtube_active_id: '',
+  youtube_playlists: '',
 };
 
 // ----------------------------------------------------
@@ -202,6 +221,8 @@ export async function fetchSettings(): Promise<SignageSettings> {
           qr_size: Number(data.qr_size ?? DEFAULT_SETTINGS.qr_size),
           slide_duration: Number(data.slide_duration ?? DEFAULT_SETTINGS.slide_duration),
           mute: !!data.mute,
+          youtube_active_id: data.youtube_active_id ?? DEFAULT_SETTINGS.youtube_active_id,
+          youtube_playlists: data.youtube_playlists ?? DEFAULT_SETTINGS.youtube_playlists,
         };
       } else {
         // Table exists but no settings row exists yet - insert default
@@ -278,6 +299,7 @@ export async function fetchMedia(): Promise<MediaItem[]> {
       if (error) throw error;
 
       if (data) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return data.map((item: any) => ({
           id: item.id,
           type: item.type === 'video' ? 'video' : 'image',
@@ -331,7 +353,10 @@ export async function fetchMedia(): Promise<MediaItem[]> {
 export async function checkGoogleDriveConfigured(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
   try {
-    const res = await fetch('/api/drive/status');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch('/api/drive/status', { signal: controller.signal });
+    clearTimeout(timeoutId);
     const data = await res.json();
     return !!data.configured;
   } catch {
@@ -598,7 +623,10 @@ export async function fetchPlaylists(): Promise<Playlist[]> {
   if (isDriveConfigured) {
     try {
       window.dispatchEvent(new CustomEvent('playlists-syncing'));
-      const res = await fetch('/api/drive/playlist');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch('/api/drive/playlist', { signal: controller.signal });
+      clearTimeout(timeoutId);
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.playlists) {
@@ -685,11 +713,16 @@ export function savePlaylists(playlists: Playlist[]): void {
     if (configured) {
       window.dispatchEvent(new CustomEvent('playlists-syncing'));
       
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
       fetch('/api/drive/playlist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playlists }),
+        signal: controller.signal
       }).then(async res => {
+        clearTimeout(timeoutId);
         if (!res.ok) {
           const errText = await res.text().catch(() => 'Failed to sync to Google Drive');
           window.dispatchEvent(new CustomEvent('playlists-synced', { 
@@ -700,6 +733,7 @@ export function savePlaylists(playlists: Playlist[]): void {
         const data = await res.json();
         window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { success: true, message: data.message } }));
       }).catch(err => {
+        clearTimeout(timeoutId);
         console.error('Error syncing playlists to Google Drive:', err);
         window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { success: false, error: err.message } }));
       });
@@ -775,8 +809,10 @@ export function resolveActivePlaylist(playlists: Playlist[]): Playlist | null {
     }
   }
 
-  // Write changes back to persistent storage to sync indicators
-  savePlaylists(playlists);
+  // Write changes back to localStorage cache to sync indicators without triggering background Google Drive sync
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('signage_playlists', JSON.stringify(playlists));
+  }
 
   return onlinePlaylist;
 }
