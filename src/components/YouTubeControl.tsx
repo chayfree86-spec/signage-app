@@ -524,6 +524,9 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
   // Find currently selected or fallback to active playlist
   const selectedPlaylist = playlists.find(p => p.id === selectedPlaylistId);
   const items = selectedPlaylist ? selectedPlaylist.items : [];
+  const selectedPlaylistInputsSignature = selectedPlaylist
+    ? selectedPlaylist.items.map(item => `${item.id}:${item.url}`).join('|')
+    : '';
 
   // Update input values when switching selected playlist
   useEffect(() => {
@@ -535,7 +538,7 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
       const timer = setTimeout(() => setInputValues(initialInputs), 0);
       return () => clearTimeout(timer);
     }
-  }, [selectedPlaylistId, selectedPlaylist?.id]);
+  }, [selectedPlaylistId, selectedPlaylist?.id, selectedPlaylistInputsSignature]);
 
   const savePlaylistsState = async (updatedPlaylists: YouTubePlaylist[]) => {
     setPlaylists(updatedPlaylists);
@@ -622,13 +625,9 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
         if (response.ok) {
           const data = await response.json();
           if (data.title) {
-            // Retrieve latest items in state to avoid overwrites
-            const activePlaylist = playlists.find(p => p.id === selectedPlaylistId);
-            const currentItems = activePlaylist ? activePlaylist.items : updated;
-            
-            const updatedWithTitle = currentItems.map(item => {
+            const updatedWithTitle = updated.map(item => {
               if (item.id === id) {
-                return { ...item, title: data.title };
+                return { ...item, url: newUrl, title: data.title };
               }
               return item;
             });
@@ -962,7 +961,7 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
           {/* Grid of Slots */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3">
             {items.map((item, index) => {
-              const currentInput = inputValues[item.id] ?? '';
+              const currentInput = inputValues[item.id] ?? item.url ?? '';
               const isModified = currentInput !== item.url;
               const videoId = getYouTubeId(currentInput);
               const savedVideoId = getYouTubeId(item.url);
@@ -1080,7 +1079,7 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
                       </div>
                       <input
                         type="text"
-                        value={focusedItemId === item.id ? currentInput : (item.title || currentInput)}
+                        value={focusedItemId === item.id ? currentInput : (item.url ? (item.title || currentInput) : currentInput)}
                         onFocus={() => setFocusedItemId(item.id)}
                         onChange={(e) => handleInputChange(item.id, e.target.value)}
                         onBlur={() => {
