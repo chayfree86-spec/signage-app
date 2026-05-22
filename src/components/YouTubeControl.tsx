@@ -747,13 +747,18 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
         {/* Enabled/Disabled Toggle */}
         <button
           onClick={toggleEnabled}
-          className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all duration-300 border border-zinc-800 bg-zinc-950/40 text-zinc-500 cursor-pointer select-none active:scale-95"
+          title={enabled ? 'Disable YouTube playback' : 'Enable YouTube playback'}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wide transition-all duration-300 border cursor-pointer select-none active:scale-95 ${
+            enabled
+              ? 'bg-red-500/15 border-red-500/50 text-red-300 shadow-[0_0_18px_rgba(239,68,68,0.12)]'
+              : 'bg-red-500 text-white border-red-400 shadow-[0_0_18px_rgba(239,68,68,0.18)] hover:bg-red-400'
+          }`}
           style={
             enabled
               ? {
-                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
                   borderColor: 'rgba(239, 68, 68, 0.5)',
-                  color: 'rgb(239, 68, 68)',
+                  color: 'rgb(252, 165, 165)',
                 }
               : {}
           }
@@ -761,10 +766,13 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
           {enabled ? (
             <>
               <Play size={12} className="fill-current animate-pulse text-red-500" />
-              Active
+              Disable YouTube
             </>
           ) : (
-            'Disabled'
+            <>
+              <Play size={12} className="fill-current" />
+              Enable YouTube
+            </>
           )}
         </button>
       </div>
