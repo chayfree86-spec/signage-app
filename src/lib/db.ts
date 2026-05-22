@@ -80,6 +80,30 @@ const DEFAULT_SETTINGS: SignageSettings = {
   youtube_loop: true,
 };
 
+const SETTINGS_STORAGE_KEY = 'signage_settings';
+const SETTINGS_LAST_LOCAL_WRITE_KEY = 'signage_settings_last_local_write';
+const SETTINGS_CLOUD_OVERWRITE_GRACE_MS = 10000;
+
+function readLocalSettingsSnapshot(): SignageSettings {
+  if (typeof window === 'undefined') return DEFAULT_SETTINGS;
+
+  const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
+  if (!saved) return DEFAULT_SETTINGS;
+
+  try {
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
+function writeLocalSettingsSnapshot(settings: SignageSettings): void {
+  if (typeof window === 'undefined') return;
+
+  localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  localStorage.setItem(SETTINGS_LAST_LOCAL_WRITE_KEY, String(Date.now()));
+}
+
 // ----------------------------------------------------
 // INDEXED DB IMPLEMENTATION FOR OFFLINE FILE STORAGE
 // ----------------------------------------------------
@@ -210,19 +234,7 @@ export async function fetchSettings(): Promise<SignageSettings> {
   // Drive/Supabase sync happens in the background.
   // ============================================================
   
-  let localSettings: SignageSettings = DEFAULT_SETTINGS;
-  
-  if (typeof window !== 'undefined') {
-    // Try localStorage cache first — always instant
-    const saved = localStorage.getItem('signage_settings');
-    if (saved) {
-      try {
-        localSettings = { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
-      } catch {
-        localSettings = DEFAULT_SETTINGS;
-      }
-    }
-  }
+  const localSettings = readLocalSettingsSnapshot();
   
   // Fire-and-forget background sync from cloud sources (does NOT block return)
   syncSettingsFromSourcesInBackground();
@@ -269,8 +281,13 @@ function syncSettingsFromSourcesInBackground(): void {
 }
 
 function publishCloudSettings(settings: Partial<SignageSettings>): void {
+  const lastLocalWrite = Number(localStorage.getItem(SETTINGS_LAST_LOCAL_WRITE_KEY) || 0);
+  if (lastLocalWrite && Date.now() - lastLocalWrite < SETTINGS_CLOUD_OVERWRITE_GRACE_MS) {
+    return;
+  }
+
   const cloudSettings = { ...DEFAULT_SETTINGS, ...settings };
-  localStorage.setItem('signage_settings', JSON.stringify(cloudSettings));
+  localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(cloudSettings));
   window.dispatchEvent(new CustomEvent('settings-synced-from-drive', { detail: cloudSettings }));
 }
 
@@ -292,76 +309,85 @@ export function sanitizeSettingsForDb(settings: SignageSettings) {
 }
 
 export async function updateSettings(settings: Partial<SignageSettings>): Promise<SignageSettings> {
-  const current = await fetchSettings();
+  const current = readLocalSettingsSnapshot();
   const updated = { ...current, ...settings };
 
-  // Write to Supabase if active
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      window.dispatchEvent(new CustomEvent('supabase-syncing'));
-      const dbPayload = sanitizeSettingsForDb(updated);
-      
-      // Get settings count first
-      const { data } = await supabase.from('settings').select('id').limit(1);
-      if (data && data.length > 0) {
-        // Update existing row (assuming single-row layout)
-        const { error } = await supabase
-          .from('settings')
-          .update(dbPayload)
-          .eq('id', data[0].id);
-        if (error) throw error;
-      } else {
-        // Insert new settings row
-        const { error } = await supabase
-          .from('settings')
-          .insert([dbPayload]);
-        if (error) throw error;
-      }
-      window.dispatchEvent(new CustomEvent('supabase-synced', { detail: { success: true } }));
-    } catch (e) {
-      console.error('Supabase settings update failed in db.ts:', e);
-      window.dispatchEvent(new CustomEvent('supabase-synced', { detail: { success: false, error: (e as Error).message } }));
+  if (typeof window !== 'undefined') {
+    writeLocalSettingsSnapshot(updated);
+  }
+
+  const syncResults = await Promise.allSettled([
+    syncSettingsToSupabase(updated),
+    syncSettingsToDrive(updated),
+  ]);
+
+  for (const result of syncResults) {
+    if (result.status === 'rejected') {
+      console.error('Settings cloud sync failed:', result.reason);
     }
   }
-
-  // Local fallback
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('signage_settings', JSON.stringify(updated));
-  }
-
-  // Background async sync to Google Drive for cross-PC persistence
-  syncSettingsToDrive(updated);
 
   return updated;
 }
 
-// Background async sync settings to Google Drive (fire-and-forget)
-function syncSettingsToDrive(settings: SignageSettings): void {
+async function syncSettingsToSupabase(settings: SignageSettings): Promise<void> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+
+  try {
+    window.dispatchEvent(new CustomEvent('supabase-syncing'));
+    const dbPayload = sanitizeSettingsForDb(settings);
+
+    // Get settings count first
+    const { data, error: selectError } = await supabase.from('settings').select('id').limit(1);
+    if (selectError) throw selectError;
+
+    if (data && data.length > 0) {
+      // Update existing row (assuming single-row layout)
+      const { error } = await supabase
+        .from('settings')
+        .update(dbPayload)
+        .eq('id', data[0].id);
+      if (error) throw error;
+    } else {
+      // Insert new settings row
+      const { error } = await supabase
+        .from('settings')
+        .insert([dbPayload]);
+      if (error) throw error;
+    }
+    window.dispatchEvent(new CustomEvent('supabase-synced', { detail: { success: true } }));
+  } catch (e) {
+    console.error('Supabase settings update failed in db.ts:', e);
+    window.dispatchEvent(new CustomEvent('supabase-synced', { detail: { success: false, error: (e as Error).message } }));
+    throw e;
+  }
+}
+
+async function syncSettingsToDrive(settings: SignageSettings): Promise<void> {
   if (typeof window === 'undefined') return;
-  
-  checkGoogleDriveConfigured().then(configured => {
-    if (!configured) return;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+  const configured = await checkGoogleDriveConfigured();
+  if (!configured) return;
 
-    fetch('/api/drive/settings', {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const res = await fetch('/api/drive/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ settings }),
       signal: controller.signal
-    }).then(async res => {
-      clearTimeout(timeoutId);
-      if (!res.ok) {
-        const errText = await res.text().catch(() => 'Failed to sync settings to Drive');
-        console.warn('Drive settings sync failed:', errText);
-      }
-    }).catch(err => {
-      clearTimeout(timeoutId);
-      console.error('Error syncing settings to Google Drive:', err);
     });
-  });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => 'Failed to sync settings to Drive');
+      throw new Error(errText);
+    }
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export async function fetchMedia(): Promise<MediaItem[]> {

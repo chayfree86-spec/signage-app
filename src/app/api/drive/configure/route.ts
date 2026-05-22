@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { normalizeGooglePrivateKey } from '../google-key';
 
 // Helper to update/clear keys in .env.local
 function updateEnvFile(email: string | null, privateKey: string | null, folderId: string | null) {
@@ -98,8 +99,7 @@ export async function POST(req: Request) {
 
     const cleanEmail = email.trim();
     const cleanFolderId = folderId.trim();
-    // Normalize private key string: resolve escaped newlines to actual newlines for credential verification
-    const cleanPrivateKey = privateKey.trim().replace(/\\n/g, '\n');
+    const cleanPrivateKey = normalizeGooglePrivateKey(privateKey);
 
     let folderName = '';
 

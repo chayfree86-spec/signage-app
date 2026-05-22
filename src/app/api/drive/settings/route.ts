@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
 import { Readable } from 'stream';
+import { normalizeGooglePrivateKey } from '../google-key';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,7 @@ const CACHE_TTL = 30000; // 30 seconds cache TTL
 // Helper to authenticate and get Google Drive instance
 function getDriveInstance() {
   const CLIENT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+  const PRIVATE_KEY = normalizeGooglePrivateKey(process.env.GOOGLE_PRIVATE_KEY);
   const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
   if (!CLIENT_EMAIL || !PRIVATE_KEY || !FOLDER_ID) {

@@ -1,5 +1,6 @@
 import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
+import { normalizeGooglePrivateKey } from '../../google-key';
 
 export async function GET(
   request: Request,
@@ -7,7 +8,7 @@ export async function GET(
 ) {
   try {
     const CLIENT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    const PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    const PRIVATE_KEY = normalizeGooglePrivateKey(process.env.GOOGLE_PRIVATE_KEY);
 
     // Resolve dynamic params safely for all Next.js versions (including Next.js 15/16 async params)
     const resolvedParams = await context.params;
