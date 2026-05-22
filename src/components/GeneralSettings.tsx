@@ -18,6 +18,7 @@ import {
   HardDrive
 } from 'lucide-react';
 import { getSupabaseConfig, saveSupabaseConfig, clearSupabaseConfig } from '@/lib/supabase';
+import { fetchPlaylists, savePlaylists } from '@/lib/db';
 
 interface GeneralSettingsProps {
   slideDuration: number;
@@ -193,8 +194,9 @@ export default function GeneralSettings({
       setConfigAlertType('success');
       setShowConfigAlert(true);
       setTimeout(() => setShowConfigAlert(false), 4000);
-      
-      // Reload page state to trigger Supabase connection
+
+      // Push existing local media through the cloud sync pipeline once credentials exist.
+      savePlaylists(await fetchPlaylists());
       await onReloadData();
     }
   };

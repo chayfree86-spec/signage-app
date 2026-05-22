@@ -49,3 +49,5 @@ credentials*.json
 # android builds / apk files
 *.apk
 
+# local test media
+/public/live-test-media/

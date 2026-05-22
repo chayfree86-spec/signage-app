@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   fetchSettings, 
-  fetchPlaylists, 
+  syncScreenPlaylistsFromSupabase,
   resolveActivePlaylist,
   updateSettings,
   MediaItem,
@@ -24,7 +24,7 @@ export default function ScreenPage() {
       const fetchedSettings = await fetchSettings();
       setSettings(fetchedSettings);
 
-      const fetchedPlaylists = await fetchPlaylists();
+      const fetchedPlaylists = await syncScreenPlaylistsFromSupabase();
       setPlaylists(fetchedPlaylists);
 
       const activePlay = resolveActivePlaylist(fetchedPlaylists);
@@ -43,7 +43,9 @@ export default function ScreenPage() {
   };
 
   useEffect(() => {
-    loadSignageData();
+    const initialLoadTimeout = setTimeout(() => {
+      loadSignageData();
+    }, 0);
 
     // Poll the database/local storage every 3 seconds to get updates in real-time
     const pollInterval = setInterval(() => {
@@ -66,6 +68,7 @@ export default function ScreenPage() {
     window.addEventListener('playlists-synced', handleBackgroundSync);
 
     return () => {
+      clearTimeout(initialLoadTimeout);
       clearInterval(pollInterval);
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('settings-synced-from-drive', handleBackgroundSync);

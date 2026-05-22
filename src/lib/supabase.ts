@@ -6,22 +6,39 @@ export interface SupabaseConfig {
   anonKey: string;
 }
 
+function isUsableSupabaseConfig(url?: string | null, anonKey?: string | null): url is string {
+  if (!url || !anonKey) return false;
+
+  const trimmedUrl = url.trim();
+  const trimmedKey = anonKey.trim();
+
+  if (!trimmedKey || trimmedKey === 'YOUR_SUPABASE_ANON_KEY') return false;
+
+  try {
+    const parsed = new URL(trimmedUrl);
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+      && parsed.hostname.includes('.');
+  } catch {
+    return false;
+  }
+}
+
 // Retrieve config from env or localStorage
 export function getSupabaseConfig(): SupabaseConfig | null {
   // 1. Check if we have env variables
   const envUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const envKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (envUrl && envKey && envUrl !== 'YOUR_SUPABASE_URL' && envKey !== 'YOUR_SUPABASE_ANON_KEY') {
-    return { url: envUrl, anonKey: envKey };
+  if (isUsableSupabaseConfig(envUrl, envKey)) {
+    return { url: envUrl.trim(), anonKey: envKey!.trim() };
   }
 
   // 2. Check localStorage (for dynamic runtime configuration via settings panel)
   if (typeof window !== 'undefined') {
     const localUrl = localStorage.getItem('signage_supabase_url');
     const localKey = localStorage.getItem('signage_supabase_anon_key');
-    if (localUrl && localKey) {
-      return { url: localUrl, anonKey: localKey };
+    if (isUsableSupabaseConfig(localUrl, localKey)) {
+      return { url: localUrl.trim(), anonKey: localKey!.trim() };
     }
   }
 

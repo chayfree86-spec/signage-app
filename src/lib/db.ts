@@ -95,7 +95,7 @@ function getIDB(): Promise<IDBDatabase> {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
-    request.onupgradeneeded = (event) => {
+    request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains('media_meta')) {
         db.createObjectStore('media_meta', { keyPath: 'id' });
@@ -224,19 +224,33 @@ export async function fetchSettings(): Promise<SignageSettings> {
     }
   }
   
-  // Fire-and-forget background sync from Drive (does NOT block return)
-  syncSettingsFromDriveInBackground();
+  // Fire-and-forget background sync from cloud sources (does NOT block return)
+  syncSettingsFromSourcesInBackground();
   
   return localSettings;
 }
 
-// Background sync: fetches from Drive and updates localStorage silently
-function syncSettingsFromDriveInBackground(): void {
+// Background sync: prefer Supabase, then fall back to Drive.
+function syncSettingsFromSourcesInBackground(): void {
   if (typeof window === 'undefined') return;
-  
-  checkGoogleDriveConfigured().then(async isDriveConfigured => {
+
+  (async () => {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.from('settings').select('*').limit(1);
+        if (!error && data && data.length > 0) {
+          publishCloudSettings(data[0]);
+          return;
+        }
+      } catch {
+        // Supabase failed, try Drive.
+      }
+    }
+
+    const isDriveConfigured = await checkGoogleDriveConfigured();
     if (!isDriveConfigured) return;
-    
+
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 6000);
@@ -245,18 +259,20 @@ function syncSettingsFromDriveInBackground(): void {
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.settings) {
-          const driveSettings = { ...DEFAULT_SETTINGS, ...data.settings };
-          localStorage.setItem('signage_settings', JSON.stringify(driveSettings));
-          // Dispatch custom event so page can react to fresh data
-          window.dispatchEvent(new CustomEvent('settings-synced-from-drive', { detail: driveSettings }));
+          publishCloudSettings(data.settings);
         }
       }
     } catch {
       // Silently ignore Drive sync failures — local data is already returned
     }
-  }).catch(() => {});
+  })().catch(() => {});
 }
 
+function publishCloudSettings(settings: Partial<SignageSettings>): void {
+  const cloudSettings = { ...DEFAULT_SETTINGS, ...settings };
+  localStorage.setItem('signage_settings', JSON.stringify(cloudSettings));
+  window.dispatchEvent(new CustomEvent('settings-synced-from-drive', { detail: cloudSettings }));
+}
 
 
 export function sanitizeSettingsForDb(settings: SignageSettings) {
@@ -466,68 +482,6 @@ export async function checkGoogleDriveConfigured(): Promise<boolean> {
 }
 
 export async function uploadMediaItem(file: File): Promise<MediaItem> {
-  const isDriveConfigured = await checkGoogleDriveConfigured();
-
-  if (isDriveConfigured) {
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const res = await fetch('/api/drive/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!res.ok) {
-        throw new Error(await res.text() || 'Failed to upload to Google Drive');
-      }
-
-      const data = await res.json();
-      if (!data.success || !data.file) {
-        throw new Error('Invalid response from Google Drive upload API');
-      }
-
-      const driveFile = data.file;
-
-      // Find next position index
-      const list = await fetchMedia();
-      const position = list.length > 0 ? Math.max(...list.map(m => m.position)) + 1 : 0;
-
-      const mediaItem: MediaItem = {
-        id: driveFile.id,
-        type: driveFile.type,
-        url: driveFile.url,
-        name: driveFile.name,
-        size: driveFile.size,
-        position,
-        active: true,
-        created_at: driveFile.created_at,
-      };
-
-      // Save metadata in Supabase (if connected)
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        try {
-          const { error: dbError } = await supabase
-            .from('media')
-            .insert([mediaItem]);
-
-          if (dbError) throw dbError;
-          return mediaItem;
-        } catch (supabaseError) {
-          console.warn('Google Drive media metadata sync to Supabase failed, saving locally:', supabaseError);
-        }
-      }
-
-      // Local fallback for metadata: save in IndexedDB
-      await saveLocalMeta(mediaItem);
-      return mediaItem;
-
-    } catch (e) {
-      console.warn('Google Drive upload failed, falling back to standard storage methods:', e);
-    }
-  }
-
   const id = crypto.randomUUID();
   const type: 'image' | 'video' = file.type.startsWith('video/') ? 'video' : 'image';
   const name = file.name;
@@ -538,56 +492,8 @@ export async function uploadMediaItem(file: File): Promise<MediaItem> {
   const list = await fetchMedia();
   const position = list.length > 0 ? Math.max(...list.map(m => m.position)) + 1 : 0;
 
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      // 1. Upload to Storage Bucket
-      const bucketName = type === 'video' ? 'videos' : 'images';
-      const fileExt = file.name.split('.').pop() || '';
-      const filePath = `${id}.${fileExt}`;
-
-      // Upload file bytes
-      const { error: uploadError } = await supabase.storage
-        .from(bucketName)
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: true
-        });
-
-      if (uploadError) throw uploadError;
-
-      // 2. Get Public URL
-      const { data: urlData } = supabase.storage
-        .from(bucketName)
-        .getPublicUrl(filePath);
-
-      const publicUrl = urlData.publicUrl;
-
-      // 3. Create db record
-      const mediaItem = {
-        id,
-        type,
-        url: publicUrl,
-        name,
-        size,
-        position,
-        active: true,
-        created_at,
-      };
-
-      const { error: dbError } = await supabase
-        .from('media')
-        .insert([mediaItem]);
-
-      if (dbError) throw dbError;
-
-      return mediaItem as MediaItem;
-    } catch (e) {
-      console.warn('Supabase media upload failed, falling back to local storage:', e);
-    }
-  }
-
-  // Local fallback upload
+  // Uploads are local-first so the controller stays responsive offline.
+  // Playlist sync moves local Blob media to Supabase after the UI update.
   await saveLocalFile(id, file, name);
   const localMeta = {
     id,
@@ -607,6 +513,71 @@ export async function uploadMediaItem(file: File): Promise<MediaItem> {
     url: blobUrl,
     localBlob: file,
   };
+}
+
+export async function saveUploadedMediaToSupabase(file: File): Promise<MediaItem> {
+  const id = crypto.randomUUID();
+  const type: MediaItem['type'] = file.type.startsWith('video/') ? 'video' : 'image';
+  const list = await fetchMedia();
+  const position = list.length > 0 ? Math.max(...list.map(m => m.position)) + 1 : 0;
+  const createdAt = new Date().toISOString();
+  const publicUrl = await uploadSupabaseMediaFile(id, type, file, file.name);
+
+  const mediaItem: MediaItem = {
+    id,
+    type,
+    url: publicUrl,
+    name: file.name,
+    size: file.size,
+    position,
+    active: true,
+    created_at: createdAt,
+  };
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new Error('Supabase is not configured.');
+  }
+
+  const { error } = await supabase.from('media').insert([mediaItem]);
+  if (error) throw error;
+
+  return mediaItem;
+}
+
+async function uploadSupabaseMediaFile(
+  id: string,
+  type: MediaItem['type'],
+  file: Blob,
+  filename: string
+): Promise<string> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new Error('Supabase is not configured.');
+  }
+
+  const bucketName = type === 'video' ? 'videos' : 'images';
+  const fileExt = filename.split('.').pop() || '';
+  const filePath = fileExt ? `${id}.${fileExt}` : id;
+
+  const { error: uploadError } = await supabase.storage
+    .from(bucketName)
+    .upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: true,
+    });
+
+  if (uploadError) throw uploadError;
+
+  const { data } = supabase.storage
+    .from(bucketName)
+    .getPublicUrl(filePath);
+
+  if (!data.publicUrl) {
+    throw new Error(`Supabase did not return a public URL for ${bucketName}/${filePath}.`);
+  }
+
+  return data.publicUrl;
 }
 
 export async function deleteMediaItem(id: string): Promise<void> {
@@ -762,17 +733,154 @@ export async function fetchPlaylists(): Promise<Playlist[]> {
   return initialList;
 }
 
+export async function syncScreenPlaylistsFromSupabase(): Promise<Playlist[]> {
+  if (typeof window === 'undefined') return [];
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      const [{ data: playlistRows, error: playlistError }, { data: mediaRows, error: mediaError }] = await Promise.all([
+        supabase.from('playlists').select('*').order('created_at', { ascending: true }),
+        supabase.from('media').select('*').order('position', { ascending: true }),
+      ]);
+
+      if (playlistError) throw playlistError;
+      if (mediaError) throw mediaError;
+
+      if (playlistRows && playlistRows.length > 0) {
+        const mediaById = new Map<string, MediaItem>();
+        for (const row of mediaRows || []) {
+          const id = String(row.id || '');
+          if (id) {
+            mediaById.set(id, mapSupabaseMediaRow(row));
+          }
+        }
+
+        const cloudPlaylists = mapSupabasePlaylists(playlistRows, mediaById);
+        localStorage.setItem('signage_playlists', JSON.stringify(cloudPlaylists));
+        return cachePlaylistsForLocalPlayback(cloudPlaylists);
+      }
+    } catch (error) {
+      console.warn('Supabase TV playlist sync failed, using local cache:', error);
+    }
+  }
+
+  const localPlaylists = await fetchPlaylists();
+  return cachePlaylistsForLocalPlayback(localPlaylists);
+}
+
+function mapSupabaseMediaRow(row: Record<string, unknown>): MediaItem {
+  const id = String(row.id || '');
+  return {
+    id,
+    type: row.type === 'video' ? 'video' : 'image',
+    url: String(row.url || ''),
+    name: String(row.name || `media-${id.slice(0, 6)}`),
+    size: Number(row.size || 0),
+    position: Number(row.position || 0),
+    active: !!row.active,
+    created_at: String(row.created_at || new Date().toISOString()),
+  };
+}
+
+function mapSupabasePlaylists(
+  rows: Record<string, unknown>[],
+  mediaById: Map<string, MediaItem>
+): Playlist[] {
+  return rows.map(row => {
+    const items = Array.isArray(row.items)
+      ? row.items.map(item => {
+          const playlistItem = item as MediaItem;
+          const cloudMedia = mediaById.get(playlistItem.id);
+          return cloudMedia ? { ...playlistItem, ...cloudMedia } : playlistItem;
+        })
+      : [];
+
+    return {
+      id: String(row.id || ''),
+      name: String(row.name || 'Playlist'),
+      active: !!row.active,
+      is_online: !!row.is_online,
+      schedule_enabled: !!row.schedule_enabled,
+      schedule_start_date: row.schedule_start_date ? String(row.schedule_start_date) : undefined,
+      schedule_end_date: row.schedule_end_date ? String(row.schedule_end_date) : undefined,
+      schedule_start_time: row.schedule_start_time ? String(row.schedule_start_time) : undefined,
+      schedule_end_time: row.schedule_end_time ? String(row.schedule_end_time) : undefined,
+      items,
+      created_at: String(row.created_at || new Date().toISOString()),
+      transition_style: (row.transition_style as Playlist['transition_style']) || 'fade-scale',
+    };
+  });
+}
+
+async function cachePlaylistsForLocalPlayback(playlists: Playlist[]): Promise<Playlist[]> {
+  return Promise.all(playlists.map(async playlist => ({
+    ...playlist,
+    items: await Promise.all(playlist.items.map(cacheMediaForLocalPlayback)),
+  })));
+}
+
+async function cacheMediaForLocalPlayback(item: MediaItem): Promise<MediaItem> {
+  const cachedBlob = await getLocalFile(item.id);
+  if (cachedBlob) {
+    return {
+      ...item,
+      url: makeBlobUrl(item.id, cachedBlob),
+      localBlob: cachedBlob,
+    };
+  }
+
+  if (!isDownloadableMediaUrl(item.url)) {
+    return item;
+  }
+
+  try {
+    const blob = await downloadMediaBlob(item.url);
+    await saveLocalFile(item.id, blob, item.name);
+    await saveLocalMeta(item);
+    return {
+      ...item,
+      url: makeBlobUrl(item.id, blob),
+      localBlob: blob,
+    };
+  } catch (error) {
+    console.warn(`TV media cache failed for ${item.id}, using remote URL:`, error);
+    return item;
+  }
+}
+
+function isDownloadableMediaUrl(url: string): boolean {
+  return url.startsWith('http://')
+    || url.startsWith('https://')
+    || url.startsWith('/');
+}
+
+async function downloadMediaBlob(url: string): Promise<Blob> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`Media download failed with status ${response.status}.`);
+    }
+
+    return response.blob();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // Regenerate blob URLs for local media items (sync version, awaited)
 async function regenerateBlobUrls(playlists: Playlist[]): Promise<void> {
   for (const playlist of playlists) {
     for (const item of playlist.items) {
-      // Skip if URL is already a valid blob URL that hasn't been revoked
+      // Blob URLs from localStorage or cloud sync can point at an old document.
+      // Only reuse URLs created by this page; otherwise restore from IndexedDB.
       if (item.url && item.url.startsWith('blob:')) {
-        try {
-          const response = await fetch(item.url, { method: 'HEAD' });
-          if (response.ok) continue; // Blob URL still valid
-        } catch {
-          // Blob URL is stale, regenerate below
+        const activeUrl = activeBlobUrls.get(item.id);
+        if (activeUrl === item.url) {
+          continue;
         }
       }
       // Skip remote URLs (Google Drive, external)
@@ -853,83 +961,170 @@ function syncPlaylistsFromSourcesInBackground(): void {
 export function savePlaylists(playlists: Playlist[]): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem('signage_playlists', JSON.stringify(playlists));
-  
-  // 1. Sync to Supabase SQL Database in the background
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    const upsertData = playlists.map(p => ({
-      id: p.id,
-      name: p.name,
-      active: p.active,
-      is_online: p.is_online,
-      schedule_enabled: p.schedule_enabled,
-      schedule_start_date: p.schedule_start_date || null,
-      schedule_end_date: p.schedule_end_date || null,
-      schedule_start_time: p.schedule_start_time || null,
-      schedule_end_time: p.schedule_end_time || null,
-      items: p.items,
-      transition_style: p.transition_style || 'fade-scale',
-      created_at: p.created_at
-    }));
 
-    // Use an async IIFE to make background sync robust
-    (async () => {
+  (async () => {
+    const supabase = getSupabaseClient();
+    let cloudPlaylists = playlists;
+
+    if (supabase) {
       try {
         window.dispatchEvent(new CustomEvent('supabase-syncing'));
-        const { data: existing, error: selectError } = await supabase.from('playlists').select('id');
-        if (selectError) throw selectError;
+        cloudPlaylists = await syncLocalPlaylistMediaToSupabase(playlists);
+        await syncPlaylistsToSupabase(cloudPlaylists);
 
-        const existingIds = existing ? existing.map((e: { id: string }) => e.id) : [];
-        const currentIds = playlists.map(p => p.id);
-        const toDelete = existingIds.filter(id => !currentIds.includes(id));
-        
-        if (toDelete.length > 0) {
-          const { error: deleteError } = await supabase.from('playlists').delete().in('id', toDelete);
-          if (deleteError) throw deleteError;
+        if (cloudPlaylists !== playlists) {
+          localStorage.setItem('signage_playlists', JSON.stringify(cloudPlaylists));
+          window.dispatchEvent(new CustomEvent('playlists-synced', {
+            detail: { source: 'supabase-media', playlists: cloudPlaylists },
+          }));
         }
-        
-        const { error: upsertError } = await supabase.from('playlists').upsert(upsertData);
-        if (upsertError) throw upsertError;
 
         window.dispatchEvent(new CustomEvent('supabase-synced', { detail: { success: true } }));
       } catch (err) {
         console.error('Error syncing playlists to Supabase:', err);
-        window.dispatchEvent(new CustomEvent('supabase-synced', { detail: { success: false, error: (err as Error).message } }));
+        window.dispatchEvent(new CustomEvent('supabase-synced', {
+          detail: { success: false, error: (err as Error).message },
+        }));
       }
-    })();
+    }
+
+    await syncPlaylistsToDrive(cloudPlaylists);
+  })().catch(err => {
+    console.error('Error syncing playlists to cloud sources:', err);
+  });
+}
+
+async function syncLocalPlaylistMediaToSupabase(playlists: Playlist[]): Promise<Playlist[]> {
+  const syncedMedia: MediaItem[] = [];
+  let changed = false;
+
+  const migrated = await Promise.all(playlists.map(async playlist => ({
+    ...playlist,
+    items: await Promise.all(playlist.items.map(async item => {
+      if (!needsSupabaseMediaUpload(item)) {
+        return item;
+      }
+
+      const blob = item.localBlob instanceof Blob ? item.localBlob : await getLocalFile(item.id);
+      if (!blob) {
+        return item;
+      }
+
+      const url = await uploadSupabaseMediaFile(item.id, item.type, blob, item.name);
+      const cloudItem = { ...item };
+      delete cloudItem.localBlob;
+      const syncedItem = { ...cloudItem, url };
+      syncedMedia.push(syncedItem);
+      changed = true;
+      return syncedItem;
+    })),
+  })));
+
+  if (syncedMedia.length > 0) {
+    await upsertSupabaseMedia(syncedMedia);
   }
 
-  // 2. Asynchronous background sync to Google Drive if configured
-  checkGoogleDriveConfigured().then(configured => {
-    if (configured) {
-      window.dispatchEvent(new CustomEvent('playlists-syncing'));
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-      
-      fetch('/api/drive/playlist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playlists }),
-        signal: controller.signal
-      }).then(async res => {
-        clearTimeout(timeoutId);
-        if (!res.ok) {
-          const errText = await res.text().catch(() => 'Failed to sync to Google Drive');
-          window.dispatchEvent(new CustomEvent('playlists-synced', { 
-            detail: { success: false, error: errText } 
-          }));
-          return;
-        }
-        const data = await res.json();
-        window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { success: true, message: data.message } }));
-      }).catch(err => {
-        clearTimeout(timeoutId);
-        console.error('Error syncing playlists to Google Drive:', err);
-        window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { success: false, error: err.message } }));
-      });
+  return changed ? migrated : playlists;
+}
+
+function needsSupabaseMediaUpload(item: MediaItem): boolean {
+  if (item.localBlob instanceof Blob || item.url.startsWith('blob:')) {
+    return true;
+  }
+
+  return !item.url.startsWith('/') && !item.url.startsWith('http');
+}
+
+async function upsertSupabaseMedia(items: MediaItem[]): Promise<void> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+
+  const rows = items.map(item => ({
+    id: item.id,
+    type: item.type,
+    url: item.url,
+    name: item.name,
+    size: item.size,
+    position: item.position,
+    active: item.active,
+    created_at: item.created_at,
+  }));
+  const { error } = await supabase.from('media').upsert(rows);
+  if (error) throw error;
+}
+
+async function syncPlaylistsToSupabase(playlists: Playlist[]): Promise<void> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+
+  const upsertData = playlists.map(p => ({
+    id: p.id,
+    name: p.name,
+    active: p.active,
+    is_online: p.is_online,
+    schedule_enabled: p.schedule_enabled,
+    schedule_start_date: p.schedule_start_date || null,
+    schedule_end_date: p.schedule_end_date || null,
+    schedule_start_time: p.schedule_start_time || null,
+    schedule_end_time: p.schedule_end_time || null,
+    items: p.items,
+    transition_style: p.transition_style || 'fade-scale',
+    created_at: p.created_at,
+  }));
+
+  const { data: existing, error: selectError } = await supabase.from('playlists').select('id');
+  if (selectError) throw selectError;
+
+  const existingIds = existing ? existing.map((e: { id: string }) => e.id) : [];
+  const currentIds = playlists.map(p => p.id);
+  const toDelete = existingIds.filter(id => !currentIds.includes(id));
+
+  if (toDelete.length > 0) {
+    const { error: deleteError } = await supabase.from('playlists').delete().in('id', toDelete);
+    if (deleteError) throw deleteError;
+  }
+
+  const { error: upsertError } = await supabase.from('playlists').upsert(upsertData);
+  if (upsertError) throw upsertError;
+}
+
+async function syncPlaylistsToDrive(playlists: Playlist[]): Promise<void> {
+  const configured = await checkGoogleDriveConfigured();
+  if (!configured) return;
+
+  window.dispatchEvent(new CustomEvent('playlists-syncing'));
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const res = await fetch('/api/drive/playlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playlists }),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const error = await res.text().catch(() => 'Failed to sync to Google Drive');
+      window.dispatchEvent(new CustomEvent('playlists-synced', {
+        detail: { success: false, error },
+      }));
+      return;
     }
-  });
+
+    const data = await res.json();
+    window.dispatchEvent(new CustomEvent('playlists-synced', {
+      detail: { success: true, message: data.message },
+    }));
+  } catch (err) {
+    console.error('Error syncing playlists to Google Drive:', err);
+    window.dispatchEvent(new CustomEvent('playlists-synced', {
+      detail: { success: false, error: (err as Error).message },
+    }));
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export function resolveActivePlaylist(playlists: Playlist[]): Playlist | null {

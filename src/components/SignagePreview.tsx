@@ -75,6 +75,8 @@ export default function SignagePreview({
   const displayIndex = activeMedia.length > 0
     ? Math.min(currentIndex, activeMedia.length - 1)
     : 0;
+  const currentMedia = activeMedia[displayIndex];
+  const currentSlideDuration = currentMedia?.slide_duration || settings.slide_duration;
 
   const activeYoutubeItems = parseYouTubeUrls(settings.youtube_url).filter(
     item => item.enabled && getYouTubeId(item.url)
@@ -638,13 +640,12 @@ export default function SignagePreview({
     // Playlist media mode
     if (activeMedia.length === 0) return;
 
-    const currentItem = activeMedia[displayIndex];
+    const currentItem = currentMedia;
     if (!currentItem) return;
 
     // If current item is an image, set a timeout to transition to next
     if (currentItem.type === 'image') {
-      const duration = currentItem.slide_duration || settings.slide_duration;
-      const durationMs = duration * 1000;
+      const durationMs = currentSlideDuration * 1000;
       timerRef.current = setTimeout(() => {
         handleNext();
       }, durationMs);
@@ -657,10 +658,9 @@ export default function SignagePreview({
   }, [
     displayIndex,
     activeMedia.length,
-    settings.slide_duration,
+    currentMedia?.type,
+    currentSlideDuration,
     settings.youtube_enabled,
-    timeTicker,
-    activeYoutubeItems.length
   ]);
 
   // ----------------------------------------------------
