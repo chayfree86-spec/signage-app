@@ -1202,20 +1202,16 @@ async function syncPlaylistsToSupabase(playlists: Playlist[]): Promise<void> {
     created_at: p.created_at,
   }));
 
-  const { data: existing, error: selectError } = await supabase.from('playlists').select('id');
-  if (selectError) throw selectError;
-
-  const existingIds = existing ? existing.map((e: { id: string }) => e.id) : [];
-  const currentIds = playlists.map(p => p.id);
-  const toDelete = existingIds.filter(id => !currentIds.includes(id));
-
-  if (toDelete.length > 0) {
-    const { error: deleteError } = await supabase.from('playlists').delete().in('id', toDelete);
-    if (deleteError) throw deleteError;
-  }
-
   const { error: upsertError } = await supabase.from('playlists').upsert(upsertData);
   if (upsertError) throw upsertError;
+}
+
+export async function deletePlaylistRecord(id: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+
+  const { error } = await supabase.from('playlists').delete().eq('id', id);
+  if (error) throw error;
 }
 
 async function syncPlaylistsToDrive(playlists: Playlist[]): Promise<boolean> {
