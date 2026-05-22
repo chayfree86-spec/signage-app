@@ -1,4 +1,4 @@
-import { access, cp, mkdir, readdir, rm } from 'node:fs/promises';
+import { access, cp, mkdir, readdir, rm, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const root = process.cwd();
@@ -29,6 +29,16 @@ async function copyIfExists(source, destination) {
   }
 }
 
+async function prepareOutputPackageJson() {
+  const packageJsonPath = path.join(outputDir, 'package.json');
+  const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf8'));
+  packageJson.scripts = {
+    ...packageJson.scripts,
+    start: 'node server.js',
+  };
+  await writeFile(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
+}
+
 await rm(outputDir, { force: true, recursive: true });
 await mkdir(path.join(outputDir, '.next'), { recursive: true });
 await mkdir(path.join(outputDir, 'public'), { recursive: true });
@@ -40,5 +50,6 @@ await cp(path.join(root, '.next', 'static'), path.join(outputDir, '.next', 'stat
 
 await Promise.all((await readdir(path.join(root, 'public'), { withFileTypes: true })).map(copyPublicEntry));
 await copyIfExists(path.join(root, '.env.example'), path.join(outputDir, '.env.example'));
+await prepareOutputPackageJson();
 
 console.log('Prepared self-host deployment in output/.');
