@@ -19,6 +19,7 @@
 
 # production
 /build
+deploy-self-host/*.zip
 
 # misc
 .DS_Store

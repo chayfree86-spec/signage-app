@@ -969,26 +969,24 @@ function syncPlaylistsFromSourcesInBackground(): void {
     const supabase = getSupabaseClient();
     if (supabase) {
       try {
-        const { data, error } = await supabase
-          .from('playlists')
-          .select('*')
-          .order('created_at', { ascending: true });
+        const [{ data: playlistRows, error: playlistError }, { data: mediaRows, error: mediaError }] = await Promise.all([
+          supabase.from('playlists').select('*').order('created_at', { ascending: true }),
+          supabase.from('media').select('*').order('position', { ascending: true }),
+        ]);
 
-        if (!error && data && data.length > 0) {
-          const parsed = data.map(row => ({
-            id: row.id,
-            name: row.name,
-            active: !!row.active,
-            is_online: !!row.is_online,
-            schedule_enabled: !!row.schedule_enabled,
-            schedule_start_date: row.schedule_start_date || undefined,
-            schedule_end_date: row.schedule_end_date || undefined,
-            schedule_start_time: row.schedule_start_time || undefined,
-            schedule_end_time: row.schedule_end_time || undefined,
-            items: Array.isArray(row.items) ? row.items : [],
-            created_at: row.created_at,
-            transition_style: row.transition_style || 'fade-scale',
-          })) as Playlist[];
+        if (playlistError) throw playlistError;
+        if (mediaError) throw mediaError;
+
+        if (playlistRows && playlistRows.length > 0) {
+          const mediaById = new Map<string, MediaItem>();
+          for (const row of mediaRows || []) {
+            const id = String(row.id || '');
+            if (id) {
+              mediaById.set(id, mapSupabaseMediaRow(row));
+            }
+          }
+
+          const parsed = mapSupabasePlaylists(playlistRows, mediaById);
 
           localStorage.setItem('signage_playlists', JSON.stringify(parsed));
           window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { source: 'supabase', playlists: parsed } }));

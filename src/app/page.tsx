@@ -1,15 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Tv, 
   RotateCw, 
-  Cloud, 
-  CheckCircle2, 
-  Upload, 
   Settings2, 
   Info,
-  Layers,
   Radio,
   FileImage,
   QrCode,
@@ -49,7 +45,29 @@ export default function Home() {
   // ----------------------------------------------------
   // INITIALIZE DATA & POPULATE MOCK DATA ON FIRST LAUNCH
   // ----------------------------------------------------
-  const loadSignageData = async () => {
+  const resetSyncTimer = useCallback(() => {
+    setSyncSeconds(0);
+  }, []);
+
+  const applyResolvedPlaylistState = useCallback((nextPlaylists: Playlist[]) => {
+    setPlaylists(nextPlaylists);
+
+    const activePlay = resolveActivePlaylist(nextPlaylists);
+    if (activePlay) {
+      setMediaList(activePlay.items);
+      setActiveTransitionStyle(activePlay.transition_style || 'fade-scale');
+    } else {
+      setMediaList([]);
+      setActiveTransitionStyle('fade-scale');
+    }
+  }, []);
+
+  const handleReloadUploadedMedia = useCallback(async () => {
+    const list = await fetchMedia();
+    setAllUploadedMedia(list);
+  }, []);
+
+  const loadSignageData = useCallback(async () => {
     try {
       setLoading(true);
       const fetchedSettings = await fetchSettings();
@@ -106,17 +124,7 @@ export default function Home() {
 
       // Load Playlists
       const fetchedPlaylists = await fetchPlaylists();
-      setPlaylists(fetchedPlaylists);
-
-      // Resolve running active media for TV Preview Screen
-      const activePlay = resolveActivePlaylist(fetchedPlaylists);
-      if (activePlay) {
-        setMediaList(activePlay.items);
-        setActiveTransitionStyle(activePlay.transition_style || 'fade-scale');
-      } else {
-        setMediaList([]);
-        setActiveTransitionStyle('fade-scale');
-      }
+      applyResolvedPlaylistState(fetchedPlaylists);
 
       resetSyncTimer();
     } catch (e) {
@@ -124,10 +132,12 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [applyResolvedPlaylistState, resetSyncTimer]);
 
   useEffect(() => {
-    loadSignageData();
+    const initialLoadTimeout = setTimeout(() => {
+      loadSignageData();
+    }, 0);
 
     // Start sync timer ticking
     syncTimerRef.current = setInterval(() => {
@@ -135,9 +145,37 @@ export default function Home() {
     }, 1000);
 
     return () => {
+      clearTimeout(initialLoadTimeout);
       if (syncTimerRef.current) clearInterval(syncTimerRef.current);
     };
-  }, []);
+  }, [loadSignageData]);
+
+  useEffect(() => {
+    const handlePlaylistsSynced = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (!detail || !Array.isArray(detail.playlists)) return;
+
+      const syncedPlaylists = detail.playlists as Playlist[];
+      applyResolvedPlaylistState(syncedPlaylists);
+      void handleReloadUploadedMedia();
+      resetSyncTimer();
+    };
+
+    const handleSettingsSynced = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (!detail) return;
+      setSettings(detail as SignageSettings);
+      resetSyncTimer();
+    };
+
+    window.addEventListener('playlists-synced', handlePlaylistsSynced);
+    window.addEventListener('settings-synced-from-drive', handleSettingsSynced);
+
+    return () => {
+      window.removeEventListener('playlists-synced', handlePlaylistsSynced);
+      window.removeEventListener('settings-synced-from-drive', handleSettingsSynced);
+    };
+  }, [applyResolvedPlaylistState, handleReloadUploadedMedia, resetSyncTimer]);
 
   // ----------------------------------------------------
   // RUN REALTIME DATETIME PLAYLIST SCHEDULER TICKER LOOP
@@ -166,30 +204,9 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [playlists, mediaList, activeTransitionStyle]);
 
-  // ----------------------------------------------------
-  // MUTATION WRAPPERS (RESET SYNC TIMER INSTANTLY)
-  // ----------------------------------------------------
-  function resetSyncTimer() {
-    setSyncSeconds(0);
-  }
-
-  const handleReloadUploadedMedia = async () => {
-    const list = await fetchMedia();
-    setAllUploadedMedia(list);
-  };
-
   const handlePlaylistsChange = (updatedPlaylists: Playlist[]) => {
-    setPlaylists(updatedPlaylists);
     savePlaylists(updatedPlaylists);
-    
-    const activePlay = resolveActivePlaylist(updatedPlaylists);
-    if (activePlay) {
-      setMediaList(activePlay.items);
-      setActiveTransitionStyle(activePlay.transition_style || 'fade-scale');
-    } else {
-      setMediaList([]);
-      setActiveTransitionStyle('fade-scale');
-    }
+    applyResolvedPlaylistState(updatedPlaylists);
     resetSyncTimer();
   };
 
