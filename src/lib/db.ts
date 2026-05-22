@@ -204,81 +204,60 @@ function makeBlobUrl(id: string, blob: Blob): string {
 // ----------------------------------------------------
 
 export async function fetchSettings(): Promise<SignageSettings> {
-  // 1. Try Google Drive first (cross-PC sync source of truth)
-  const isDriveConfigured = await checkGoogleDriveConfigured();
-  if (isDriveConfigured) {
+  // ============================================================
+  // FAST PATH: Return from localStorage immediately (no network wait)
+  // This ensures the loading screen disappears instantly.
+  // Drive/Supabase sync happens in the background.
+  // ============================================================
+  
+  let localSettings: SignageSettings = DEFAULT_SETTINGS;
+  
+  if (typeof window !== 'undefined') {
+    // Try localStorage cache first — always instant
+    const saved = localStorage.getItem('signage_settings');
+    if (saved) {
+      try {
+        localSettings = { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
+      } catch {
+        localSettings = DEFAULT_SETTINGS;
+      }
+    }
+  }
+  
+  // Fire-and-forget background sync from Drive (does NOT block return)
+  syncSettingsFromDriveInBackground();
+  
+  return localSettings;
+}
+
+// Background sync: fetches from Drive and updates localStorage silently
+function syncSettingsFromDriveInBackground(): void {
+  if (typeof window === 'undefined') return;
+  
+  checkGoogleDriveConfigured().then(async isDriveConfigured => {
+    if (!isDriveConfigured) return;
+    
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
       const res = await fetch('/api/drive/settings', { signal: controller.signal });
       clearTimeout(timeoutId);
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.settings) {
           const driveSettings = { ...DEFAULT_SETTINGS, ...data.settings };
-          // Cache locally for fast subsequent loads
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('signage_settings', JSON.stringify(driveSettings));
-          }
-          return driveSettings;
+          localStorage.setItem('signage_settings', JSON.stringify(driveSettings));
+          // Dispatch custom event so page can react to fresh data
+          window.dispatchEvent(new CustomEvent('settings-synced-from-drive', { detail: driveSettings }));
         }
       }
-    } catch (e) {
-      console.warn('Google Drive settings fetch failed, falling back:', e);
+    } catch {
+      // Silently ignore Drive sync failures — local data is already returned
     }
-  }
-
-  // 2. Try Supabase
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('settings')
-        .select('*')
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (data) {
-        return {
-          youtube_url: data.youtube_url ?? DEFAULT_SETTINGS.youtube_url,
-          youtube_enabled: !!data.youtube_enabled,
-          qr_text: data.qr_text ?? DEFAULT_SETTINGS.qr_text,
-          qr_enabled: !!data.qr_enabled,
-          qr_position: data.qr_position ?? DEFAULT_SETTINGS.qr_position,
-          qr_size: Number(data.qr_size ?? DEFAULT_SETTINGS.qr_size),
-          slide_duration: Number(data.slide_duration ?? DEFAULT_SETTINGS.slide_duration),
-          mute: !!data.mute,
-          youtube_active_id: data.youtube_active_id ?? DEFAULT_SETTINGS.youtube_active_id,
-          youtube_playlists: data.youtube_playlists ?? DEFAULT_SETTINGS.youtube_playlists,
-          youtube_loop: data.youtube_loop !== undefined ? !!data.youtube_loop : DEFAULT_SETTINGS.youtube_loop,
-        };
-      } else {
-        // Table exists but no settings row exists yet - insert default
-        const { error: insertError } = await supabase
-          .from('settings')
-          .insert([DEFAULT_SETTINGS]);
-        if (insertError) console.warn('Could not insert default settings in Supabase', insertError);
-        return DEFAULT_SETTINGS;
-      }
-    } catch (e) {
-      console.warn('Supabase settings fetch failed, checking local storage:', e);
-    }
-  }
-
-  // 3. Local Fallback
-  if (typeof window !== 'undefined') {
-    const saved = localStorage.getItem('signage_settings');
-    if (saved) {
-      try {
-        return { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
-      } catch {
-        return DEFAULT_SETTINGS;
-      }
-    }
-  }
-  return DEFAULT_SETTINGS;
+  }).catch(() => {});
 }
+
+
 
 export function sanitizeSettingsForDb(settings: SignageSettings) {
   return {
@@ -432,18 +411,58 @@ export async function fetchMedia(): Promise<MediaItem[]> {
   }
 }
 
+let cachedDriveConfigured: boolean | null = null;
+let driveConfigPromise: Promise<boolean> | null = null;
+
 export async function checkGoogleDriveConfigured(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-    const res = await fetch('/api/drive/status', { signal: controller.signal });
-    clearTimeout(timeoutId);
-    const data = await res.json();
-    return !!data.configured;
-  } catch {
-    return false;
+
+  // Return immediately from in-memory cache (fastest path)
+  if (cachedDriveConfigured !== null) {
+    return cachedDriveConfigured;
   }
+
+  // Check sessionStorage so the result survives React hot-reloads within a session
+  try {
+    const cached = sessionStorage.getItem('drive_configured');
+    if (cached !== null) {
+      cachedDriveConfigured = cached === 'true';
+      return cachedDriveConfigured;
+    }
+  } catch {
+    // sessionStorage not available — ignore
+  }
+
+  // Collapse concurrent calls into one fetch
+  if (driveConfigPromise) {
+    return driveConfigPromise;
+  }
+
+  driveConfigPromise = (async () => {
+    try {
+      const controller = new AbortController();
+      // Server now responds instantly (just env var check), 3s timeout is generous
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch('/api/drive/status', { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        const result = !!data.configured;
+        cachedDriveConfigured = result;
+        try { sessionStorage.setItem('drive_configured', String(result)); } catch { /* ignore */ }
+        return result;
+      }
+      cachedDriveConfigured = false;
+      return false;
+    } catch {
+      cachedDriveConfigured = false;
+      return false;
+    } finally {
+      driveConfigPromise = null;
+    }
+  })();
+
+  return driveConfigPromise;
 }
 
 export async function uploadMediaItem(file: File): Promise<MediaItem> {
@@ -700,19 +719,58 @@ export async function updatePlaylistOrder(orderedIds: string[]): Promise<void> {
 export async function fetchPlaylists(): Promise<Playlist[]> {
   if (typeof window === 'undefined') return [];
 
-  let shouldSeedSupabase = false;
-
-  // 1. Try fetching from Supabase SQL database first (source of truth)
-  const supabase = getSupabaseClient();
-  if (supabase) {
+  // ============================================================
+  // FAST PATH: Return from localStorage immediately.
+  // Supabase/Drive sync will happen in background.
+  // ============================================================
+  const saved = localStorage.getItem('signage_playlists');
+  if (saved) {
     try {
-      const { data, error } = await supabase
-        .from('playlists')
-        .select('*')
-        .order('created_at', { ascending: true });
+      const parsed = JSON.parse(saved) as Playlist[];
+      // Regenerate Blob URLs in background (non-blocking)
+      regenerateBlobUrlsInBackground(parsed);
+      // Trigger background sync from authoritative sources
+      syncPlaylistsFromSourcesInBackground();
+      return parsed;
+    } catch {
+      // Fall through to build default
+    }
+  }
 
-      if (!error && data) {
-        if (data.length > 0) {
+  // FIRST RUN: No local data — try Supabase, Drive, then create default
+  return await buildInitialPlaylists();
+}
+
+// Regenerate blob URLs for local media items (does not block)
+function regenerateBlobUrlsInBackground(playlists: Playlist[]): void {
+  (async () => {
+    for (const playlist of playlists) {
+      for (const item of playlist.items) {
+        const blob = await getLocalFile(item.id);
+        if (blob) {
+          item.url = makeBlobUrl(item.id, blob);
+          item.localBlob = blob;
+        }
+      }
+    }
+  })().catch(() => {});
+}
+
+// Background sync from Supabase then Drive (fire-and-forget)
+function syncPlaylistsFromSourcesInBackground(): void {
+  if (typeof window === 'undefined') return;
+
+  (async () => {
+    // Try Supabase first
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('playlists')
+          .select('*')
+          .order('created_at', { ascending: true });
+
+        if (!error && data && data.length > 0) {
           const parsed = data.map(row => ({
             id: row.id,
             name: row.name,
@@ -728,104 +786,98 @@ export async function fetchPlaylists(): Promise<Playlist[]> {
             transition_style: row.transition_style || 'fade-scale',
           })) as Playlist[];
 
-          // Dynamic regeneration of Blob URLs for all local files in playlists
-          // to resolve broken thumbnails on browser page reloads
-          for (const playlist of parsed) {
-            for (const item of playlist.items) {
-              const blob = await getLocalFile(item.id);
-              if (blob) {
-                item.url = makeBlobUrl(item.id, blob);
-                item.localBlob = blob;
-              }
-            }
-          }
-
-          // Save to local storage cache
           localStorage.setItem('signage_playlists', JSON.stringify(parsed));
-          return parsed;
-        } else {
-          // Connected successfully but database playlists table is empty. Mark for seeding!
-          shouldSeedSupabase = true;
+          window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { source: 'supabase', playlists: parsed } }));
+          return; // Supabase succeeded, no need for Drive
         }
+      } catch {
+        // Supabase failed, try Drive
       }
-    } catch (e) {
-      console.warn('Failed to fetch playlists from Supabase, falling back to Google Drive:', e);
     }
-  }
 
-  // 2. Try fetching from Google Drive if configured
-  const isDriveConfigured = await checkGoogleDriveConfigured();
-  if (isDriveConfigured) {
+    // Try Google Drive
+    const isDriveConfigured = await checkGoogleDriveConfigured();
+    if (!isDriveConfigured) return;
+
     try {
-      window.dispatchEvent(new CustomEvent('playlists-syncing'));
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
       const res = await fetch('/api/drive/playlist', { signal: controller.signal });
       clearTimeout(timeoutId);
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.playlists) {
           const parsed = data.playlists as Playlist[];
-          
-          // Dynamic regeneration of Blob URLs for all local files in playlists
-          for (const playlist of parsed) {
-            for (const item of playlist.items) {
-              const blob = await getLocalFile(item.id);
-              if (blob) {
-                item.url = makeBlobUrl(item.id, blob);
-                item.localBlob = blob;
-              }
-            }
-          }
-          
-          // Save to local storage cache
           localStorage.setItem('signage_playlists', JSON.stringify(parsed));
-          window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { success: true } }));
-          
-          // Seed Supabase in background if connected and empty
-          if (supabase && shouldSeedSupabase) {
-            savePlaylists(parsed);
+          window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { source: 'drive', playlists: parsed } }));
+        }
+      }
+    } catch {
+      // Silently ignore
+    }
+  })().catch(() => {});
+}
+
+// First-run: build playlists from scratch when no local data exists
+async function buildInitialPlaylists(): Promise<Playlist[]> {
+  const supabase = getSupabaseClient();
+
+  // Try Supabase
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('playlists')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        const parsed = data.map(row => ({
+          id: row.id,
+          name: row.name,
+          active: !!row.active,
+          is_online: !!row.is_online,
+          schedule_enabled: !!row.schedule_enabled,
+          schedule_start_date: row.schedule_start_date || undefined,
+          schedule_end_date: row.schedule_end_date || undefined,
+          schedule_start_time: row.schedule_start_time || undefined,
+          schedule_end_time: row.schedule_end_time || undefined,
+          items: Array.isArray(row.items) ? row.items : [],
+          created_at: row.created_at,
+          transition_style: row.transition_style || 'fade-scale',
+        })) as Playlist[];
+
+        for (const playlist of parsed) {
+          for (const item of playlist.items) {
+            const blob = await getLocalFile(item.id);
+            if (blob) { item.url = makeBlobUrl(item.id, blob); item.localBlob = blob; }
           }
-          
+        }
+        localStorage.setItem('signage_playlists', JSON.stringify(parsed));
+        return parsed;
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Try Drive
+  const isDriveConfigured = await checkGoogleDriveConfigured();
+  if (isDriveConfigured) {
+    try {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), 6000);
+      const res = await fetch('/api/drive/playlist', { signal: controller.signal });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.playlists) {
+          const parsed = data.playlists as Playlist[];
+          localStorage.setItem('signage_playlists', JSON.stringify(parsed));
+          if (supabase) savePlaylists(parsed);
           return parsed;
         }
       }
-      window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { success: false } }));
-    } catch (e) {
-      console.warn('Failed to fetch playlists from Google Drive, falling back to local cache:', e);
-      window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { success: false } }));
-    }
+    } catch { /* ignore */ }
   }
 
-  // 3. Fallback to localStorage
-  const saved = localStorage.getItem('signage_playlists');
-  if (saved) {
-    try {
-      const parsed = JSON.parse(saved) as Playlist[];
-      
-      // Dynamic regeneration of Blob URLs for all local files in playlists
-      for (const playlist of parsed) {
-        for (const item of playlist.items) {
-          const blob = await getLocalFile(item.id);
-          if (blob) {
-            item.url = makeBlobUrl(item.id, blob);
-            item.localBlob = blob;
-          }
-        }
-      }
-      
-      // Seed Supabase in background if connected and empty
-      if (supabase && shouldSeedSupabase) {
-        savePlaylists(parsed);
-      }
-      
-      return parsed;
-    } catch {
-      // JSON parse error, rebuild default below
-    }
-  }
-
-  // Seeding: Fetch existing flat media list to build initial Default Playlist
+  // Create default playlist
   const existingMedia = await fetchMedia();
   const defaultPlaylist: Playlist = {
     id: 'default-playlist',
@@ -839,17 +891,12 @@ export async function fetchPlaylists(): Promise<Playlist[]> {
 
   const initialList = [defaultPlaylist];
   localStorage.setItem('signage_playlists', JSON.stringify(initialList));
-  
-  // Seed everywhere
-  if (supabase) {
-    savePlaylists(initialList);
-  }
-  if (isDriveConfigured) {
-    savePlaylists(initialList);
-  }
-  
+  if (supabase) savePlaylists(initialList);
+  if (isDriveConfigured) savePlaylists(initialList);
+
   return initialList;
 }
+
 
 export function savePlaylists(playlists: Playlist[]): void {
   if (typeof window === 'undefined') return;

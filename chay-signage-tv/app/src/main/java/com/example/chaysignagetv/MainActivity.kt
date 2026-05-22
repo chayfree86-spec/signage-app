@@ -56,10 +56,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val sharedPref = getSharedPreferences("SignageTVPrefs", Context.MODE_PRIVATE)
-        val savedUrl = sharedPref.getString("signage_url", "http://10.201.189.96:3000") ?: "http://10.201.189.96:3000"
+        val savedUrl = sharedPref.getString("signage_url", "http://10.144.158.96:3000") ?: "http://10.144.158.96:3000"
         
         // If no custom URL is configured, show settings dialog by default
-        if (savedUrl == "http://10.201.189.96:3000" && !sharedPref.contains("signage_url")) {
+        if (savedUrl == "http://10.144.158.96:3000" && !sharedPref.contains("signage_url")) {
             showSettingsState.value = true
         }
 
@@ -257,7 +257,7 @@ fun SettingsDialog(
     val dropdownFocusRequester = remember { FocusRequester() }
 
     val presetUrls = listOf(
-        "http://10.201.189.96:3000",
+        "http://10.144.158.96:3000",
         "http://192.168.1.100:3000",
         "http://192.168.0.100:3000",
         "http://localhost:3000",

@@ -1,7 +1,12 @@
 import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
 import { Readable } from 'stream';
+export const dynamic = 'force-dynamic';
 
+// Server-side cache for playlist
+let cachedResponse: any = null;
+let lastFetchTime = 0;
+const CACHE_TTL = 30000; // 30 seconds cache TTL
 // Helper to authenticate and get Google Drive instance
 function getDriveInstance() {
   const CLIENT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -18,11 +23,31 @@ function getDriveInstance() {
     scopes: ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive']
   });
 
-  return google.drive({ version: 'v3', auth, timeout: 3000 });
+  return google.drive({ version: 'v3', auth, timeout: 5000 });
 }
 
 // GET: Fetch playlist.json from Google Drive folder
 export async function GET() {
+  const now = Date.now();
+
+  // FAST PATH: Fresh cache
+  if (cachedResponse && (now - lastFetchTime < CACHE_TTL)) {
+    return NextResponse.json(cachedResponse);
+  }
+
+  // STALE-WHILE-REVALIDATE: Return stale data immediately, refresh in background
+  if (cachedResponse) {
+    refreshPlaylistCache().catch(() => {});
+    return NextResponse.json({ ...cachedResponse, stale: true });
+  }
+
+  // FIRST LOAD: Blocking fetch (only happens once per server start)
+  return await refreshPlaylistCache();
+}
+
+async function refreshPlaylistCache(): Promise<any> {
+  const { NextResponse } = await import('next/server');
+  const now = Date.now();
   try {
     const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
     const drive = getDriveInstance();
@@ -36,25 +61,23 @@ export async function GET() {
 
     const files = searchResponse.data.files || [];
     if (files.length === 0) {
-      // File does not exist yet
-      return NextResponse.json({ success: true, playlists: null, message: 'No playlist file found on Drive.' });
+      const noPlaylistResponse = { success: true, playlists: null, message: 'No playlist file found on Drive.' };
+      cachedResponse = noPlaylistResponse;
+      lastFetchTime = now;
+      return NextResponse.json(noPlaylistResponse);
     }
 
     const fileId = files[0].id!;
 
     // 2. Download the file content
     const fileResponse = await drive.files.get(
-      {
-        fileId: fileId,
-        alt: 'media',
-      },
+      { fileId: fileId, alt: 'media' },
       { responseType: 'stream' }
     );
 
-    // Convert stream to string
     const chunks: any[] = [];
     const stream = fileResponse.data as Readable;
-    
+
     const playlistJson = await new Promise<string>((resolve, reject) => {
       stream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
       stream.on('error', (err) => reject(err));
@@ -62,25 +85,29 @@ export async function GET() {
     });
 
     const parsed = JSON.parse(playlistJson);
+    const successResponse = { success: true, playlists: parsed, fileId };
 
-    return NextResponse.json({
-      success: true,
-      playlists: parsed,
-      fileId,
-    });
+    cachedResponse = successResponse;
+    lastFetchTime = now;
+
+    return NextResponse.json(successResponse);
 
   } catch (error: any) {
     console.error('Google Drive Playlist Fetch Error:', error);
-    return NextResponse.json(
-      { error: error.message || 'Failed to fetch playlist from Google Drive' },
-      { status: 500 }
-    );
+    // Graceful fallback — return null playlists so client uses localStorage
+    const fallback = { success: true, playlists: null, message: 'Drive unavailable, using local playlists.' };
+    cachedResponse = fallback;
+    lastFetchTime = now - CACHE_TTL + 5000; // retry in 5s
+    return NextResponse.json(fallback);
   }
 }
 
 // POST: Save/Overwrite playlist.json on Google Drive folder
 export async function POST(req: Request) {
   try {
+    // Invalidate cache immediately on updates
+    cachedResponse = null;
+    lastFetchTime = 0;
     const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
     const drive = getDriveInstance();
     const { playlists } = await req.json();

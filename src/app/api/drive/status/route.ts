@@ -1,42 +1,38 @@
 import { NextResponse } from 'next/server';
-import { google } from 'googleapis';
+
+// Cache the configured status for 60 seconds to avoid repeated checks
+let cachedStatus: { configured: boolean; email: string | null; folderId: string | null } | null = null;
+let cacheTime = 0;
+const STATUS_CACHE_TTL = 60000; // 60 seconds
 
 export async function GET() {
+  const now = Date.now();
+
+  // Return cached status if still fresh
+  if (cachedStatus && now - cacheTime < STATUS_CACHE_TTL) {
+    return NextResponse.json({ ...cachedStatus, folderName: null });
+  }
+
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const privateKey = process.env.GOOGLE_PRIVATE_KEY;
   const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
   const isConfigured = !!(email && privateKey && folderId);
 
-  let folderName: string | null = null;
+  // Update cache
+  cachedStatus = {
+    configured: isConfigured,
+    email: email || null,
+    folderId: folderId || null,
+  };
+  cacheTime = now;
 
-  // Fetch the actual folder name from Google Drive
-  if (isConfigured && privateKey && email && folderId) {
-    try {
-      const auth = new google.auth.GoogleAuth({
-        credentials: {
-          client_email: email,
-          private_key: privateKey.replace(/\\n/g, '\n'),
-        },
-        scopes: ['https://www.googleapis.com/auth/drive.readonly'],
-      });
-
-      const drive = google.drive({ version: 'v3', auth });
-      const res = await drive.files.get({
-        fileId: folderId,
-        fields: 'name',
-      });
-      folderName = res.data.name || null;
-    } catch (err) {
-      console.error('Failed to fetch folder name from Google Drive:', err);
-      folderName = null;
-    }
-  }
-
+  // Return instantly without making any Google Drive network call.
+  // Folder name is not critical for functionality; it's display-only.
   return NextResponse.json({
     configured: isConfigured,
     email: email || null,
     folderId: folderId || null,
-    folderName: folderName,
+    folderName: null,
   });
 }

@@ -2,7 +2,14 @@ import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
 import { Readable } from 'stream';
 
+export const dynamic = 'force-dynamic';
+
 const SETTINGS_FILENAME = 'signage_settings.json';
+
+// Server-side cache for settings
+let cachedResponse: any = null;
+let lastFetchTime = 0;
+const CACHE_TTL = 30000; // 30 seconds cache TTL
 
 // Helper to authenticate and get Google Drive instance
 function getDriveInstance() {
@@ -20,11 +27,33 @@ function getDriveInstance() {
     scopes: ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive']
   });
 
-  return google.drive({ version: 'v3', auth, timeout: 3000 });
+  return google.drive({ version: 'v3', auth, timeout: 5000 });
 }
 
 // GET: Fetch signage_settings.json from Google Drive folder
 export async function GET() {
+  const now = Date.now();
+
+  // FAST PATH: Return fresh cached response immediately
+  if (cachedResponse && (now - lastFetchTime < CACHE_TTL)) {
+    return NextResponse.json(cachedResponse);
+  }
+
+  // STALE-WHILE-REVALIDATE: Return stale cache immediately while refreshing in background
+  if (cachedResponse) {
+    // Trigger background refresh (fire-and-forget)
+    refreshSettingsCache().catch(() => {});
+    return NextResponse.json({ ...cachedResponse, stale: true });
+  }
+
+  // FIRST LOAD: Must fetch from Drive (blocking, but only once)
+  return await refreshSettingsCache();
+}
+
+// Fetches from Drive and updates cache. Returns a NextResponse.
+async function refreshSettingsCache(): Promise<any> {
+  const { NextResponse } = await import('next/server');
+  const now = Date.now();
   try {
     const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
     const drive = getDriveInstance();
@@ -38,25 +67,24 @@ export async function GET() {
 
     const files = searchResponse.data.files || [];
     if (files.length === 0) {
-      // File does not exist yet
-      return NextResponse.json({ success: true, settings: null, message: 'No settings file found on Drive.' });
+      const noSettingsResponse = { success: true, settings: null, message: 'No settings file found on Drive.' };
+      cachedResponse = noSettingsResponse;
+      lastFetchTime = now;
+      return NextResponse.json(noSettingsResponse);
     }
 
     const fileId = files[0].id!;
 
     // 2. Download the file content
     const fileResponse = await drive.files.get(
-      {
-        fileId: fileId,
-        alt: 'media',
-      },
+      { fileId: fileId, alt: 'media' },
       { responseType: 'stream' }
     );
 
     // Convert stream to string
     const chunks: any[] = [];
     const stream = fileResponse.data as Readable;
-    
+
     const settingsJson = await new Promise<string>((resolve, reject) => {
       stream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
       stream.on('error', (err) => reject(err));
@@ -64,25 +92,31 @@ export async function GET() {
     });
 
     const parsed = JSON.parse(settingsJson);
+    const successResponse = { success: true, settings: parsed, fileId };
 
-    return NextResponse.json({
-      success: true,
-      settings: parsed,
-      fileId,
-    });
+    cachedResponse = successResponse;
+    lastFetchTime = now;
+
+    return NextResponse.json(successResponse);
 
   } catch (error: any) {
     console.error('Google Drive Settings Fetch Error:', error);
-    return NextResponse.json(
-      { error: error.message || 'Failed to fetch settings from Google Drive' },
-      { status: 500 }
-    );
+    // On failure, return a graceful null-settings response instead of 500
+    // so the client can fall back to localStorage without blocking
+    const fallback = { success: true, settings: null, message: 'Drive unavailable, using local settings.' };
+    // Cache for 5s on failure to avoid hammering Drive on errors
+    cachedResponse = fallback;
+    lastFetchTime = now - CACHE_TTL + 5000;
+    return NextResponse.json(fallback);
   }
 }
 
 // POST: Save/Overwrite signage_settings.json on Google Drive folder
 export async function POST(req: Request) {
   try {
+    // Invalidate cache immediately on updates
+    cachedResponse = null;
+    lastFetchTime = 0;
     const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
     const drive = getDriveInstance();
     const { settings } = await req.json();
