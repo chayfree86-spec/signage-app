@@ -727,33 +727,65 @@ export async function fetchPlaylists(): Promise<Playlist[]> {
   if (saved) {
     try {
       const parsed = JSON.parse(saved) as Playlist[];
-      // Regenerate Blob URLs in background (non-blocking)
-      regenerateBlobUrlsInBackground(parsed);
+      // Regenerate Blob URLs BEFORE returning so images load immediately
+      await regenerateBlobUrls(parsed);
+      // Deep clone to avoid mutating cached data
+      const result = parsed.map(p => ({
+        ...p,
+        items: p.items.map(item => ({ ...item })),
+      }));
       // Trigger background sync from authoritative sources
       syncPlaylistsFromSourcesInBackground();
-      return parsed;
+      return result;
     } catch {
       // Fall through to build default
     }
   }
 
-  // FIRST RUN: No local data — try Supabase, Drive, then create default
-  return await buildInitialPlaylists();
+  // FIRST RUN: return a usable local playlist immediately.
+  // Remote sources are refreshed in the background so the TV screen never stays
+  // stuck on the loading state while Drive or Supabase responds slowly.
+  const defaultPlaylist: Playlist = {
+    id: 'default-playlist',
+    name: 'Default Playlist',
+    active: true,
+    is_online: true,
+    schedule_enabled: false,
+    items: [],
+    created_at: new Date().toISOString(),
+    transition_style: 'fade-scale',
+  };
+
+  const initialList = [defaultPlaylist];
+  localStorage.setItem('signage_playlists', JSON.stringify(initialList));
+  syncPlaylistsFromSourcesInBackground();
+  return initialList;
 }
 
-// Regenerate blob URLs for local media items (does not block)
-function regenerateBlobUrlsInBackground(playlists: Playlist[]): void {
-  (async () => {
-    for (const playlist of playlists) {
-      for (const item of playlist.items) {
-        const blob = await getLocalFile(item.id);
-        if (blob) {
-          item.url = makeBlobUrl(item.id, blob);
-          item.localBlob = blob;
+// Regenerate blob URLs for local media items (sync version, awaited)
+async function regenerateBlobUrls(playlists: Playlist[]): Promise<void> {
+  for (const playlist of playlists) {
+    for (const item of playlist.items) {
+      // Skip if URL is already a valid blob URL that hasn't been revoked
+      if (item.url && item.url.startsWith('blob:')) {
+        try {
+          const response = await fetch(item.url, { method: 'HEAD' });
+          if (response.ok) continue; // Blob URL still valid
+        } catch {
+          // Blob URL is stale, regenerate below
         }
       }
+      // Skip remote URLs (Google Drive, external)
+      if (item.url && (item.url.startsWith('/api/drive/') || item.url.startsWith('http'))) {
+        continue;
+      }
+      const blob = await getLocalFile(item.id);
+      if (blob) {
+        item.url = makeBlobUrl(item.id, blob);
+        item.localBlob = blob;
+      }
     }
-  })().catch(() => {});
+  }
 }
 
 // Background sync from Supabase then Drive (fire-and-forget)
@@ -817,86 +849,6 @@ function syncPlaylistsFromSourcesInBackground(): void {
     }
   })().catch(() => {});
 }
-
-// First-run: build playlists from scratch when no local data exists
-async function buildInitialPlaylists(): Promise<Playlist[]> {
-  const supabase = getSupabaseClient();
-
-  // Try Supabase
-  if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('playlists')
-        .select('*')
-        .order('created_at', { ascending: true });
-
-      if (!error && data && data.length > 0) {
-        const parsed = data.map(row => ({
-          id: row.id,
-          name: row.name,
-          active: !!row.active,
-          is_online: !!row.is_online,
-          schedule_enabled: !!row.schedule_enabled,
-          schedule_start_date: row.schedule_start_date || undefined,
-          schedule_end_date: row.schedule_end_date || undefined,
-          schedule_start_time: row.schedule_start_time || undefined,
-          schedule_end_time: row.schedule_end_time || undefined,
-          items: Array.isArray(row.items) ? row.items : [],
-          created_at: row.created_at,
-          transition_style: row.transition_style || 'fade-scale',
-        })) as Playlist[];
-
-        for (const playlist of parsed) {
-          for (const item of playlist.items) {
-            const blob = await getLocalFile(item.id);
-            if (blob) { item.url = makeBlobUrl(item.id, blob); item.localBlob = blob; }
-          }
-        }
-        localStorage.setItem('signage_playlists', JSON.stringify(parsed));
-        return parsed;
-      }
-    } catch { /* ignore */ }
-  }
-
-  // Try Drive
-  const isDriveConfigured = await checkGoogleDriveConfigured();
-  if (isDriveConfigured) {
-    try {
-      const controller = new AbortController();
-      setTimeout(() => controller.abort(), 6000);
-      const res = await fetch('/api/drive/playlist', { signal: controller.signal });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.playlists) {
-          const parsed = data.playlists as Playlist[];
-          localStorage.setItem('signage_playlists', JSON.stringify(parsed));
-          if (supabase) savePlaylists(parsed);
-          return parsed;
-        }
-      }
-    } catch { /* ignore */ }
-  }
-
-  // Create default playlist
-  const existingMedia = await fetchMedia();
-  const defaultPlaylist: Playlist = {
-    id: 'default-playlist',
-    name: 'Default Playlist',
-    active: true,
-    is_online: true,
-    schedule_enabled: false,
-    items: existingMedia,
-    created_at: new Date().toISOString(),
-  };
-
-  const initialList = [defaultPlaylist];
-  localStorage.setItem('signage_playlists', JSON.stringify(initialList));
-  if (supabase) savePlaylists(initialList);
-  if (isDriveConfigured) savePlaylists(initialList);
-
-  return initialList;
-}
-
 
 export function savePlaylists(playlists: Playlist[]): void {
   if (typeof window === 'undefined') return;
@@ -983,6 +935,12 @@ export function savePlaylists(playlists: Playlist[]): void {
 export function resolveActivePlaylist(playlists: Playlist[]): Playlist | null {
   if (!playlists || playlists.length === 0) return null;
 
+  // Deep clone to avoid mutating the original array (which causes React state corruption)
+  const cloned: Playlist[] = playlists.map(p => ({
+    ...p,
+    items: p.items.map(item => ({ ...item })),
+  }));
+
   const now = new Date();
   
   // Format local date: YYYY-MM-DD
@@ -996,15 +954,15 @@ export function resolveActivePlaylist(playlists: Playlist[]): Playlist | null {
   const minutes = String(now.getMinutes()).padStart(2, '0');
   const currentTimeStr = `${hours}:${minutes}`;
 
-  // Reset online flags
-  playlists.forEach(p => {
+  // Reset online flags on cloned array only
+  cloned.forEach(p => {
     p.is_online = false;
   });
 
   // 1. Try to find a scheduled playlist that is active and currently matches the schedule
   let onlinePlaylist: Playlist | null = null;
 
-  for (const playlist of playlists) {
+  for (const playlist of cloned) {
     if (!playlist.active) continue;
 
     if (playlist.schedule_enabled) {
@@ -1032,7 +990,7 @@ export function resolveActivePlaylist(playlists: Playlist[]): Playlist | null {
 
   // 2. If no playlist is online via scheduling, fallback to the first active manual playlist
   if (!onlinePlaylist) {
-    const manualActive = playlists.find(p => p.active && !p.schedule_enabled);
+    const manualActive = cloned.find(p => p.active && !p.schedule_enabled);
     if (manualActive) {
       manualActive.is_online = true;
       onlinePlaylist = manualActive;
@@ -1041,16 +999,22 @@ export function resolveActivePlaylist(playlists: Playlist[]): Playlist | null {
 
   // 3. Fallback to default playlist if nothing else resolved
   if (!onlinePlaylist) {
-    const defaultPlay = playlists.find(p => p.id === 'default-playlist') || playlists[0];
+    const defaultPlay = cloned.find(p => p.id === 'default-playlist') || cloned[0];
     if (defaultPlay) {
       defaultPlay.is_online = true;
       onlinePlaylist = defaultPlay;
     }
   }
 
-  // Write changes back to localStorage cache to sync indicators without triggering background Google Drive sync
+  // Only write back if is_online flags actually changed, and throttle writes
   if (typeof window !== 'undefined') {
-    localStorage.setItem('signage_playlists', JSON.stringify(playlists));
+    const lastWrite = localStorage.getItem('signage_playlists_last_resolve');
+    const now2 = Date.now();
+    // Throttle: only write to localStorage max once per 5 seconds from resolveActivePlaylist
+    if (!lastWrite || now2 - parseInt(lastWrite, 10) > 5000) {
+      localStorage.setItem('signage_playlists', JSON.stringify(cloned));
+      localStorage.setItem('signage_playlists_last_resolve', String(now2));
+    }
   }
 
   return onlinePlaylist;

@@ -56,11 +56,20 @@ export default function ScreenPage() {
         loadSignageData();
       }
     };
+
+    const handleBackgroundSync = () => {
+      loadSignageData();
+    };
+
     window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('settings-synced-from-drive', handleBackgroundSync);
+    window.addEventListener('playlists-synced', handleBackgroundSync);
 
     return () => {
       clearInterval(pollInterval);
       window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('settings-synced-from-drive', handleBackgroundSync);
+      window.removeEventListener('playlists-synced', handleBackgroundSync);
     };
   }, []);
 

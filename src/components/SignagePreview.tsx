@@ -72,6 +72,9 @@ export default function SignagePreview({
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const playerRef = useRef<any>(null);
   const lastLocalUpdateRef = useRef<number>(0);
+  const displayIndex = activeMedia.length > 0
+    ? Math.min(currentIndex, activeMedia.length - 1)
+    : 0;
 
   const activeYoutubeItems = parseYouTubeUrls(settings.youtube_url).filter(
     item => item.enabled && getYouTubeId(item.url)
@@ -291,7 +294,7 @@ export default function SignagePreview({
         }
       }
     } else if (activeMedia.length > 0) {
-      const currentItem = activeMedia[currentIndex];
+      const currentItem = activeMedia[displayIndex];
       if (currentItem) {
         let progressPercent = 0;
         if (currentItem.type === 'video' && videoRef.current) {
@@ -311,7 +314,7 @@ export default function SignagePreview({
         });
       }
     }
-  }, [timeTicker, currentIndex, slideStartTime, activeMedia, settings, currentYoutubeIndex, youtubeProgress, activeYoutubeItems]);
+  }, [timeTicker, displayIndex, slideStartTime, activeMedia, settings, currentYoutubeIndex, youtubeProgress, activeYoutubeItems]);
 
   // Get all active and valid QR codes for display in the footer banner
   const qrItems = parseMultipleQrTexts(settings.qr_text, settings.qr_enabled);
@@ -331,7 +334,7 @@ export default function SignagePreview({
   }
 
   const getItemTransitionStyle = (index: number): React.CSSProperties => {
-    const isCurrent = index === currentIndex;
+    const isCurrent = index === displayIndex;
     const isPrev = index === prevIndex;
     
     // Default hidden state
@@ -603,35 +606,10 @@ export default function SignagePreview({
   // ----------------------------------------------------
   // CAROUSEL LOOP LOGIC FOR IMAGES & VIDEOS
   // ----------------------------------------------------
-  // Sync state with activeMedia length changes or youtube_enabled changes during render
-  const [prevMediaLength, setPrevMediaLength] = useState(activeMedia.length);
-  const [prevYoutubeEnabled, setPrevYoutubeEnabled] = useState(settings.youtube_enabled);
-  const [prevYoutubeUrl, setPrevYoutubeUrl] = useState(settings.youtube_url);
-
-
-  if (activeMedia.length !== prevMediaLength || settings.youtube_enabled !== prevYoutubeEnabled) {
-    setCurrentIndex(0);
-    setPrevIndex(null);
-    setTransitioning(false);
-    setPrevMediaLength(activeMedia.length);
-    setPrevYoutubeEnabled(settings.youtube_enabled);
-  }
-
-  if (settings.youtube_url !== prevYoutubeUrl) {
-    setPrevYoutubeUrl(settings.youtube_url);
-  }
-
-  if (currentIndex >= activeMedia.length && activeMedia.length > 0) {
-    setCurrentIndex(0);
-  }
-
-  const duration = settings.slide_duration || 8;
-  const durationMs = duration * 1000;
-
   function handleNext() {
     if (activeMedia.length <= 1) return;
     
-    setPrevIndex(currentIndex);
+    setPrevIndex(displayIndex);
     setTransitioning(true);
     setCurrentIndex((prev) => (prev + 1) % activeMedia.length);
     
@@ -660,7 +638,7 @@ export default function SignagePreview({
     // Playlist media mode
     if (activeMedia.length === 0) return;
 
-    const currentItem = activeMedia[currentIndex];
+    const currentItem = activeMedia[displayIndex];
     if (!currentItem) return;
 
     // If current item is an image, set a timeout to transition to next
@@ -677,7 +655,7 @@ export default function SignagePreview({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    currentIndex,
+    displayIndex,
     activeMedia.length,
     settings.slide_duration,
     settings.youtube_enabled,
@@ -761,7 +739,7 @@ export default function SignagePreview({
       return (
         <div className="w-full h-full relative bg-black overflow-hidden">
           {activeMedia.map((item, index) => {
-            const isCurrent = index === currentIndex;
+            const isCurrent = index === displayIndex;
             const isPrev = index === prevIndex;
             const shouldRenderMedia = isCurrent || isPrev;
 
