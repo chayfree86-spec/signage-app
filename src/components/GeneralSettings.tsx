@@ -45,7 +45,7 @@ export default function GeneralSettings({
   const [configAlertType, setConfigAlertType] = useState<'success' | 'delete'>('success');
 
   // Google Drive states
-  const [driveConfig, setDriveConfig] = useState<{ configured: boolean; email: string | null; folderId: string | null; folderName: string | null } | null>(null);
+  const [driveConfig, setDriveConfig] = useState<{ configured: boolean; email: string | null; folderId: string | null; folderName: string | null; mode?: string } | null>(null);
   const [loadingDrive, setLoadingDrive] = useState(true);
 
   // Dynamic Google Drive inputs and states
@@ -57,6 +57,7 @@ export default function GeneralSettings({
   const [driveSuccess, setDriveSuccess] = useState<string | null>(null);
   const [isEditingDrive, setIsEditingDrive] = useState(false);
   const [showDriveGuide, setShowDriveGuide] = useState(false);
+  const [showAdvancedDriveSetup, setShowAdvancedDriveSetup] = useState(false);
 
   useEffect(() => {
     if (driveConfig) {
@@ -175,6 +176,10 @@ export default function GeneralSettings({
     } finally {
       setSavingDrive(false);
     }
+  };
+
+  const handleGoogleSignIn = () => {
+    window.location.href = '/api/google/oauth/start';
   };
 
   const handleDurationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -337,26 +342,65 @@ export default function GeneralSettings({
             </p>
             <div className="p-2.5 rounded-lg bg-black/40 border border-zinc-900 text-[10px] space-y-2 font-mono text-zinc-400">
               <div className="space-y-0.5">
-                <span className="text-zinc-500 text-[9px] uppercase tracking-wider block">Service Account Email:</span>
+                <span className="text-zinc-500 text-[9px] uppercase tracking-wider block">Connection:</span>
                 <span className="text-yellow-500 font-semibold break-all block">{driveConfig.email}</span>
+              </div>
+              <div className="space-y-0.5">
+                <span className="text-zinc-500 text-[9px] uppercase tracking-wider block">Mode:</span>
+                <span className="text-zinc-300 font-semibold break-all block">{driveConfig.mode || 'service-account'}</span>
               </div>
               <div className="space-y-0.5">
                 <span className="text-zinc-500 text-[9px] uppercase tracking-wider block">Drive Folder:</span>
                 <span className="text-zinc-300 font-semibold break-all block">{driveConfig.folderName || driveConfig.folderId}</span>
               </div>
             </div>
-            <div className="p-2.5 bg-yellow-500/5 border border-yellow-500/10 rounded-lg flex gap-2">
-              <AlertCircle size={12} className="text-yellow-500 shrink-0 mt-0.5" />
-              <p className="text-[9.5px] text-zinc-400 leading-relaxed">
-                <strong className="text-yellow-500">Important:</strong> Ensure that you have shared your <code className="text-white bg-zinc-950 px-1 py-0.5 rounded border border-zinc-800">chaychaupaltv@gmail.com</code> Google Drive folder with the above Service Account email as <strong className="text-white">Editor</strong>.
-              </p>
-            </div>
+            {driveConfig.mode !== 'oauth' && (
+              <div className="p-2.5 bg-yellow-500/5 border border-yellow-500/10 rounded-lg flex gap-2">
+                <AlertCircle size={12} className="text-yellow-500 shrink-0 mt-0.5" />
+                <p className="text-[9.5px] text-zinc-400 leading-relaxed">
+                  <strong className="text-yellow-500">Important:</strong> Ensure that you have shared your <code className="text-white bg-zinc-950 px-1 py-0.5 rounded border border-zinc-800">chaychaupaltv@gmail.com</code> Google Drive folder with the above Service Account email as <strong className="text-white">Editor</strong>.
+                </p>
+              </div>
+            )}
             <button
               onClick={handleDisconnectDrive}
               disabled={savingDrive}
               className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-zinc-900 hover:bg-red-950/30 hover:border-red-900/40 text-zinc-400 hover:text-red-400 font-bold text-[11px] transition-all duration-300 border border-zinc-850 cursor-pointer disabled:opacity-40"
             >
               <Trash size={12} /> Google Drive Disconnect (Local Mode)
+            </button>
+          </div>
+        ) : !isEditingDrive && !showAdvancedDriveSetup ? (
+          <div className="space-y-3">
+            <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/15">
+              <div className="flex items-start gap-2">
+                <CheckCircle2 size={15} className={isCloudConfigured ? 'text-emerald-400' : 'text-zinc-500'} />
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-white">
+                    {isCloudConfigured ? 'Basic cloud setup is ready.' : 'Basic cloud setup is not connected yet.'}
+                  </p>
+                  <p className="text-[10.5px] text-zinc-400 leading-relaxed">
+                    The app saves playlists, YouTube links, and uploaded media through Supabase. Google Drive is optional backup storage and is only needed for advanced deployments.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="p-2.5 rounded-lg bg-zinc-950/70 border border-zinc-900">
+              <p className="text-[10px] text-zinc-500 leading-relaxed">
+                Google Drive cannot be connected with a normal Gmail password. Use Google sign-in below, or open advanced setup only if you need service-account deployment.
+              </p>
+            </div>
+            <button
+              onClick={handleGoogleSignIn}
+              className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-white hover:bg-zinc-200 text-black font-bold text-[11px] transition-all duration-200 border border-zinc-200"
+            >
+              <HardDrive size={12} /> Sign in with Google
+            </button>
+            <button
+              onClick={() => setShowAdvancedDriveSetup(true)}
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-zinc-900 hover:bg-zinc-850 text-zinc-400 hover:text-white font-bold text-[11px] transition-all duration-200 border border-zinc-800"
+            >
+              <Key size={12} /> Advanced Google Drive Setup
             </button>
           </div>
         ) : (
@@ -435,12 +479,20 @@ export default function GeneralSettings({
                   Cancel
                 </button>
               ) : (
-                <button
-                  onClick={() => setShowDriveGuide(!showDriveGuide)}
-                  className="py-1.5 px-3 rounded-lg bg-zinc-900 hover:bg-zinc-850 text-zinc-400 hover:text-white font-bold text-[11px] transition-all duration-200 border border-zinc-800 flex items-center gap-1"
-                >
-                  <HelpCircle size={12} /> {showDriveGuide ? 'Hide Guide' : 'Setup Guide'}
-                </button>
+                <>
+                  <button
+                    onClick={() => setShowAdvancedDriveSetup(false)}
+                    className="py-1.5 px-3 rounded-lg bg-zinc-900 hover:bg-zinc-850 text-zinc-400 hover:text-white font-bold text-[11px] transition-all duration-200 border border-zinc-800"
+                  >
+                    Hide Advanced
+                  </button>
+                  <button
+                    onClick={() => setShowDriveGuide(!showDriveGuide)}
+                    className="py-1.5 px-3 rounded-lg bg-zinc-900 hover:bg-zinc-850 text-zinc-400 hover:text-white font-bold text-[11px] transition-all duration-200 border border-zinc-800 flex items-center gap-1"
+                  >
+                    <HelpCircle size={12} /> {showDriveGuide ? 'Hide Guide' : 'Setup Guide'}
+                  </button>
+                </>
               )}
             </div>
 

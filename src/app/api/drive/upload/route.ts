@@ -1,35 +1,16 @@
-import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
 import { Readable } from 'stream';
-import { normalizeGooglePrivateKey } from '../google-key';
+import { getDriveContext } from '../google-auth';
 
 export async function POST(req: Request) {
   try {
-    const CLIENT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    const PRIVATE_KEY = normalizeGooglePrivateKey(process.env.GOOGLE_PRIVATE_KEY);
-    const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
-
-    if (!CLIENT_EMAIL || !PRIVATE_KEY || !FOLDER_ID) {
-      return NextResponse.json(
-        { error: 'Google Drive credentials are not configured on the server.' },
-        { status: 500 }
-      );
-    }
-
     const formData = await req.formData();
     const file = formData.get('file') as File;
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    // Authenticate with Google Drive
-    const auth = new google.auth.JWT({
-      email: CLIENT_EMAIL,
-      key: PRIVATE_KEY,
-      scopes: ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive']
-    });
-
-    const drive = google.drive({ version: 'v3', auth, timeout: 3000 });
+    const { drive, folderId } = await getDriveContext(req, 3000);
 
     // Convert file arrayBuffer to Buffer
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -37,7 +18,7 @@ export async function POST(req: Request) {
     // File metadata on Google Drive
     const fileMetadata = {
       name: file.name,
-      parents: [FOLDER_ID],
+      parents: [folderId],
     };
 
     // Media body content stream

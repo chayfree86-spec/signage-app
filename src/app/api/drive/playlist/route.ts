@@ -1,34 +1,14 @@
-import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
 import { Readable } from 'stream';
-import { normalizeGooglePrivateKey } from '../google-key';
+import { getDriveContext } from '../google-auth';
 export const dynamic = 'force-dynamic';
 
 // Server-side cache for playlist
 let cachedResponse: any = null;
 let lastFetchTime = 0;
 const CACHE_TTL = 30000; // 30 seconds cache TTL
-// Helper to authenticate and get Google Drive instance
-function getDriveInstance() {
-  const CLIENT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const PRIVATE_KEY = normalizeGooglePrivateKey(process.env.GOOGLE_PRIVATE_KEY);
-  const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
-
-  if (!CLIENT_EMAIL || !PRIVATE_KEY || !FOLDER_ID) {
-    throw new Error('Google Drive credentials are not configured on the server.');
-  }
-
-  const auth = new google.auth.JWT({
-    email: CLIENT_EMAIL,
-    key: PRIVATE_KEY,
-    scopes: ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive']
-  });
-
-  return google.drive({ version: 'v3', auth, timeout: 5000 });
-}
-
 // GET: Fetch playlist.json from Google Drive folder
-export async function GET() {
+export async function GET(req: Request) {
   const now = Date.now();
 
   // FAST PATH: Fresh cache
@@ -38,24 +18,23 @@ export async function GET() {
 
   // STALE-WHILE-REVALIDATE: Return stale data immediately, refresh in background
   if (cachedResponse) {
-    refreshPlaylistCache().catch(() => {});
+    refreshPlaylistCache(req).catch(() => {});
     return NextResponse.json({ ...cachedResponse, stale: true });
   }
 
   // FIRST LOAD: Blocking fetch (only happens once per server start)
-  return await refreshPlaylistCache();
+  return await refreshPlaylistCache(req);
 }
 
-async function refreshPlaylistCache(): Promise<any> {
+async function refreshPlaylistCache(req: Request): Promise<any> {
   const { NextResponse } = await import('next/server');
   const now = Date.now();
   try {
-    const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
-    const drive = getDriveInstance();
+    const { drive, folderId } = await getDriveContext(req, 5000);
 
     // 1. Search for playlist.json in the folder
     const searchResponse = await drive.files.list({
-      q: `'${FOLDER_ID}' in parents and name = 'playlist.json' and trashed = false`,
+      q: `'${folderId}' in parents and name = 'playlist.json' and trashed = false`,
       fields: 'files(id, name)',
       spaces: 'drive',
     });
@@ -109,8 +88,7 @@ export async function POST(req: Request) {
     // Invalidate cache immediately on updates
     cachedResponse = null;
     lastFetchTime = 0;
-    const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
-    const drive = getDriveInstance();
+    const { drive, folderId } = await getDriveContext(req, 5000);
     const { playlists } = await req.json();
 
     if (!playlists || !Array.isArray(playlists)) {
@@ -119,7 +97,7 @@ export async function POST(req: Request) {
 
     // 1. Search if playlist.json already exists
     const searchResponse = await drive.files.list({
-      q: `'${FOLDER_ID}' in parents and name = 'playlist.json' and trashed = false`,
+      q: `'${folderId}' in parents and name = 'playlist.json' and trashed = false`,
       fields: 'files(id, name)',
       spaces: 'drive',
     });
@@ -145,7 +123,7 @@ export async function POST(req: Request) {
       response = await drive.files.create({
         requestBody: {
           name: 'playlist.json',
-          parents: [FOLDER_ID!],
+          parents: [folderId],
         },
         media: {
           mimeType: 'application/json',

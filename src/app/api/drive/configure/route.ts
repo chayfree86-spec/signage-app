@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { normalizeGooglePrivateKey } from '../google-key';
+import { saveDriveEnv } from '../google-auth';
 
 // Helper to update/clear keys in .env.local
 function updateEnvFile(email: string | null, privateKey: string | null, folderId: string | null) {
@@ -77,11 +78,16 @@ export async function POST(req: Request) {
     // Handle Disconnect Action
     if (action === 'disconnect') {
       updateEnvFile(null, null, null);
+      saveDriveEnv({
+        GOOGLE_OAUTH_TOKENS: null,
+        GOOGLE_DRIVE_FOLDER_ID: null,
+      });
 
       // Mutate environment variables in running memory
       delete process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
       delete process.env.GOOGLE_PRIVATE_KEY;
       delete process.env.GOOGLE_DRIVE_FOLDER_ID;
+      delete process.env.GOOGLE_OAUTH_TOKENS;
 
       return NextResponse.json({
         success: true,

@@ -81,6 +81,18 @@
       "namedRegex": "^/api/drive/upload(?:/)?$"
     },
     {
+      "page": "/api/google/oauth/callback",
+      "regex": "^/api/google/oauth/callback(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/google/oauth/callback(?:/)?$"
+    },
+    {
+      "page": "/api/google/oauth/start",
+      "regex": "^/api/google/oauth/start(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/google/oauth/start(?:/)?$"
+    },
+    {
       "page": "/api/youtube/title",
       "regex": "^/api/youtube/title(?:/)?$",
       "routeKeys": {},

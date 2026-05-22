@@ -1,34 +1,16 @@
-import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
-import { normalizeGooglePrivateKey } from '../../google-key';
+import { getDriveContext } from '../../google-auth';
 
 export async function GET(
   request: Request,
   context: { params: Promise<{ fileId: string }> }
 ) {
   try {
-    const CLIENT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    const PRIVATE_KEY = normalizeGooglePrivateKey(process.env.GOOGLE_PRIVATE_KEY);
-
     // Resolve dynamic params safely for all Next.js versions (including Next.js 15/16 async params)
     const resolvedParams = await context.params;
     const fileId = resolvedParams.fileId;
 
-    if (!CLIENT_EMAIL || !PRIVATE_KEY) {
-      return NextResponse.json(
-        { error: 'Google Drive credentials are not configured on the server.' },
-        { status: 500 }
-      );
-    }
-
-    // Authenticate with Google Drive
-    const auth = new google.auth.JWT({
-      email: CLIENT_EMAIL,
-      key: PRIVATE_KEY,
-      scopes: ['https://www.googleapis.com/auth/drive.readonly']
-    });
-
-    const drive = google.drive({ version: 'v3', auth });
+    const { drive } = await getDriveContext(request);
 
     // Fetch file metadata to get Content-Type and Content-Length
     const meta = await drive.files.get({

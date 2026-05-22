@@ -1,7 +1,6 @@
-import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
 import { Readable } from 'stream';
-import { normalizeGooglePrivateKey } from '../google-key';
+import { getDriveContext } from '../google-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,27 +11,8 @@ let cachedResponse: any = null;
 let lastFetchTime = 0;
 const CACHE_TTL = 30000; // 30 seconds cache TTL
 
-// Helper to authenticate and get Google Drive instance
-function getDriveInstance() {
-  const CLIENT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const PRIVATE_KEY = normalizeGooglePrivateKey(process.env.GOOGLE_PRIVATE_KEY);
-  const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
-
-  if (!CLIENT_EMAIL || !PRIVATE_KEY || !FOLDER_ID) {
-    throw new Error('Google Drive credentials are not configured on the server.');
-  }
-
-  const auth = new google.auth.JWT({
-    email: CLIENT_EMAIL,
-    key: PRIVATE_KEY,
-    scopes: ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive']
-  });
-
-  return google.drive({ version: 'v3', auth, timeout: 5000 });
-}
-
 // GET: Fetch signage_settings.json from Google Drive folder
-export async function GET() {
+export async function GET(req: Request) {
   const now = Date.now();
 
   // FAST PATH: Return fresh cached response immediately
@@ -43,25 +23,24 @@ export async function GET() {
   // STALE-WHILE-REVALIDATE: Return stale cache immediately while refreshing in background
   if (cachedResponse) {
     // Trigger background refresh (fire-and-forget)
-    refreshSettingsCache().catch(() => {});
+    refreshSettingsCache(req).catch(() => {});
     return NextResponse.json({ ...cachedResponse, stale: true });
   }
 
   // FIRST LOAD: Must fetch from Drive (blocking, but only once)
-  return await refreshSettingsCache();
+  return await refreshSettingsCache(req);
 }
 
 // Fetches from Drive and updates cache. Returns a NextResponse.
-async function refreshSettingsCache(): Promise<any> {
+async function refreshSettingsCache(req: Request): Promise<any> {
   const { NextResponse } = await import('next/server');
   const now = Date.now();
   try {
-    const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
-    const drive = getDriveInstance();
+    const { drive, folderId } = await getDriveContext(req, 5000);
 
     // 1. Search for signage_settings.json in the folder
     const searchResponse = await drive.files.list({
-      q: `'${FOLDER_ID}' in parents and name = '${SETTINGS_FILENAME}' and trashed = false`,
+      q: `'${folderId}' in parents and name = '${SETTINGS_FILENAME}' and trashed = false`,
       fields: 'files(id, name)',
       spaces: 'drive',
     });
@@ -118,8 +97,7 @@ export async function POST(req: Request) {
     // Invalidate cache immediately on updates
     cachedResponse = null;
     lastFetchTime = 0;
-    const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
-    const drive = getDriveInstance();
+    const { drive, folderId } = await getDriveContext(req, 5000);
     const { settings } = await req.json();
 
     if (!settings || typeof settings !== 'object') {
@@ -128,7 +106,7 @@ export async function POST(req: Request) {
 
     // 1. Search if signage_settings.json already exists
     const searchResponse = await drive.files.list({
-      q: `'${FOLDER_ID}' in parents and name = '${SETTINGS_FILENAME}' and trashed = false`,
+      q: `'${folderId}' in parents and name = '${SETTINGS_FILENAME}' and trashed = false`,
       fields: 'files(id, name)',
       spaces: 'drive',
     });
@@ -154,7 +132,7 @@ export async function POST(req: Request) {
       response = await drive.files.create({
         requestBody: {
           name: SETTINGS_FILENAME,
-          parents: [FOLDER_ID!],
+          parents: [folderId],
         },
         media: {
           mimeType: 'application/json',
