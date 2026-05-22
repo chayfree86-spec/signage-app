@@ -177,6 +177,11 @@ export default function Home() {
     };
   }, [applyResolvedPlaylistState, handleReloadUploadedMedia, resetSyncTimer]);
 
+  useEffect(() => {
+    if (activeTab !== 'media') return;
+    void loadSignageData();
+  }, [activeTab, loadSignageData]);
+
   // ----------------------------------------------------
   // RUN REALTIME DATETIME PLAYLIST SCHEDULER TICKER LOOP
   // ----------------------------------------------------
@@ -212,6 +217,12 @@ export default function Home() {
     if (syncedPlaylists !== updatedPlaylists) {
       applyResolvedPlaylistState(syncedPlaylists);
     }
+  };
+
+  const handleReloadPlaylists = async () => {
+    const fetchedPlaylists = await fetchPlaylists();
+    applyResolvedPlaylistState(fetchedPlaylists);
+    resetSyncTimer();
   };
 
   const handleSettingsUpdate = async (partialSettings: Partial<SignageSettings>) => {
@@ -410,6 +421,7 @@ export default function Home() {
                     onPlaylistsChange={handlePlaylistsChange}
                     allUploadedMedia={allUploadedMedia}
                     onReloadUploadedMedia={handleReloadUploadedMedia}
+                    onReloadPlaylists={handleReloadPlaylists}
                   />
                 </div>
               )}

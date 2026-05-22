@@ -48,6 +48,7 @@ interface PlaylistManagerProps {
   onPlaylistsChange: (playlists: Playlist[]) => void;
   allUploadedMedia: MediaItem[];
   onReloadUploadedMedia: () => Promise<void>;
+  onReloadPlaylists: () => Promise<void>;
 }
 
 // ----------------------------------------------------
@@ -457,7 +458,8 @@ export default function PlaylistManager({
   playlists,
   onPlaylistsChange,
   allUploadedMedia,
-  onReloadUploadedMedia
+  onReloadUploadedMedia,
+  onReloadPlaylists
 }: PlaylistManagerProps) {
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
@@ -1194,6 +1196,14 @@ export default function PlaylistManager({
               )}
             </div>
             
+            <button
+              onClick={onReloadPlaylists}
+              className="flex items-center gap-1.5 px-3 py-2 bg-zinc-950/40 hover:bg-zinc-900 border border-zinc-850 text-zinc-300 hover:text-white text-xs font-bold rounded-xl transition-all cursor-pointer"
+            >
+              <RotateCw size={14} />
+              <span>Refresh</span>
+            </button>
+
             <button
               onClick={() => setShowCreateForm(!showCreateForm)}
               className="flex items-center gap-1.5 px-3 py-2 bg-yellow-500/10 hover:bg-yellow-500 hover:text-black border border-yellow-500/20 text-yellow-500 text-xs font-bold rounded-xl transition-all cursor-pointer"
