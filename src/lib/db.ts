@@ -814,20 +814,58 @@ function mapSupabasePlaylists(
 }
 
 async function cachePlaylistsForLocalPlayback(playlists: Playlist[]): Promise<Playlist[]> {
-  return Promise.all(playlists.map(async playlist => ({
+  const priorityItemId = findPriorityPlaybackItemId(playlists);
+  let priorityCached = false;
+
+  const localPlaylists = await Promise.all(playlists.map(async playlist => ({
     ...playlist,
-    items: await Promise.all(playlist.items.map(cacheMediaForLocalPlayback)),
+    items: await Promise.all(playlist.items.map(async item => {
+      if (!priorityCached && item.id === priorityItemId) {
+        priorityCached = true;
+        return cacheMediaForLocalPlayback(item);
+      }
+
+      return getCachedMediaForLocalPlayback(item);
+    })),
   })));
+
+  void cacheRemainingMediaForLocalPlayback(playlists, priorityItemId);
+  return localPlaylists;
+}
+
+function findPriorityPlaybackItemId(playlists: Playlist[]): string | undefined {
+  const activePlaylist = resolveActivePlaylist(playlists);
+  return activePlaylist?.items.find(item => item.active)?.id;
+}
+
+async function getCachedMediaForLocalPlayback(item: MediaItem): Promise<MediaItem> {
+  const cachedBlob = await getLocalFile(item.id);
+  if (!cachedBlob) {
+    return item;
+  }
+
+  return {
+    ...item,
+    url: makeBlobUrl(item.id, cachedBlob),
+    localBlob: cachedBlob,
+  };
+}
+
+async function cacheRemainingMediaForLocalPlayback(
+  playlists: Playlist[],
+  priorityItemId?: string
+): Promise<void> {
+  const remainingItems = playlists.flatMap(playlist =>
+    playlist.items.filter(item => item.id !== priorityItemId)
+  );
+
+  await Promise.all(remainingItems.map(cacheMediaForLocalPlayback));
 }
 
 async function cacheMediaForLocalPlayback(item: MediaItem): Promise<MediaItem> {
-  const cachedBlob = await getLocalFile(item.id);
-  if (cachedBlob) {
-    return {
-      ...item,
-      url: makeBlobUrl(item.id, cachedBlob),
-      localBlob: cachedBlob,
-    };
+  const cachedItem = await getCachedMediaForLocalPlayback(item);
+  if (cachedItem.localBlob) {
+    return cachedItem;
   }
 
   if (!isDownloadableMediaUrl(item.url)) {

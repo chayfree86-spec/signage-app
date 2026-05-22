@@ -44,7 +44,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import java.net.URL
+
+private const val DEFAULT_SIGNAGE_URL = "https://market-muscle-eddie-also.trycloudflare.com/screen"
+private const val SIGNAGE_URL_PREFERENCE = "signage_url_live_screen_v2"
 
 class MainActivity : ComponentActivity() {
 
@@ -56,12 +58,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val sharedPref = getSharedPreferences("SignageTVPrefs", Context.MODE_PRIVATE)
-        val savedUrl = sharedPref.getString("signage_url", "http://10.144.158.96:3000") ?: "http://10.144.158.96:3000"
-        
-        // If no custom URL is configured, show settings dialog by default
-        if (savedUrl == "http://10.144.158.96:3000" && !sharedPref.contains("signage_url")) {
-            showSettingsState.value = true
-        }
+        val savedUrl = sharedPref.getString(SIGNAGE_URL_PREFERENCE, DEFAULT_SIGNAGE_URL) ?: DEFAULT_SIGNAGE_URL
 
         setContent {
             var currentUrl by remember { mutableStateOf(savedUrl) }
@@ -107,7 +104,7 @@ class MainActivity : ComponentActivity() {
                                     super.onReceivedError(view, request, error)
                                     if (request?.isForMainFrame == true) {
                                         isError = true
-                                        errorMessage = error?.description?.toString() ?: "नेटवर्क कनेक्शन में त्रुटि"
+                                        errorMessage = error?.description?.toString() ?: "Network connection error"
                                     }
                                 }
                             }
@@ -141,7 +138,7 @@ class MainActivity : ComponentActivity() {
                         initialUrl = currentUrl,
                         onDismiss = { showSettingsState.value = false },
                         onSave = { newUrl ->
-                            sharedPref.edit().putString("signage_url", newUrl).apply()
+                            sharedPref.edit().putString(SIGNAGE_URL_PREFERENCE, newUrl).apply()
                             currentUrl = newUrl
                             isError = false
                             showSettingsState.value = false
@@ -159,9 +156,9 @@ class MainActivity : ComponentActivity() {
         with(webView.settings) {
             javaScriptEnabled = true
             domStorageEnabled = true
-            databaseEnabled = true
             mediaPlaybackRequiresUserGesture = false // Auto-play videos
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            cacheMode = WebSettings.LOAD_NO_CACHE
             useWideViewPort = true
             loadWithOverviewMode = true
             setSupportZoom(false)
@@ -206,7 +203,7 @@ fun ErrorScreen(message: String, onRetry: () -> Unit, onOpenSettings: () -> Unit
                 .padding(32.dp)
         ) {
             Text(
-                text = "कनेक्शन त्रुटि",
+                text = "Connection Error",
                 color = Color(0xFFEF5350),
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
@@ -214,7 +211,7 @@ fun ErrorScreen(message: String, onRetry: () -> Unit, onOpenSettings: () -> Unit
             )
             
             Text(
-                text = "सर्वर से कनेक्ट नहीं हो सका। कृपया जांचें कि आपका साइनबोर्ड कंप्यूटर और वाई-फाई चालू हैं।\n\nत्रुटि: $message",
+                text = "Could not connect to the signage server. Check the device network and server status.\n\nError: $message",
                 color = Color(0xFFE0E0E6),
                 fontSize = 14.sp,
                 lineHeight = 22.sp,
@@ -223,13 +220,13 @@ fun ErrorScreen(message: String, onRetry: () -> Unit, onOpenSettings: () -> Unit
 
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 TvButton(
-                    text = "पुनः प्रयास करें",
+                    text = "Retry",
                     onClick = onRetry,
                     focusRequester = retryFocusRequester,
                     modifier = Modifier.weight(1f)
                 )
                 TvButton(
-                    text = "सेटिंग्स खोलें",
+                    text = "Open Settings",
                     onClick = onOpenSettings,
                     modifier = Modifier.weight(1f)
                 )
@@ -257,6 +254,7 @@ fun SettingsDialog(
     val dropdownFocusRequester = remember { FocusRequester() }
 
     val presetUrls = listOf(
+        DEFAULT_SIGNAGE_URL,
         "http://10.144.158.96:3000",
         "http://192.168.1.100:3000",
         "http://192.168.0.100:3000",
@@ -300,7 +298,7 @@ fun SettingsDialog(
                 ) {
                     // Header
                     Text(
-                        text = "Signage TV सेटिंग्स",
+                        text = "Signage TV Settings",
                         color = Color.White,
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
@@ -309,7 +307,7 @@ fun SettingsDialog(
 
                     // Explanation
                     Text(
-                        text = "साइनबोर्ड वेब एप्लिकेशन का URL दर्ज करें। यदि आप लोकल वाई-फाई का उपयोग कर रहे हैं, तो कंप्यूटर का लोकल आईपी डालें।",
+                        text = "Enter the signage web app URL. For a local Wi-Fi server, use the computer IP address.",
                         color = Color(0xFFA0A0AB),
                         fontSize = 12.sp,
                         lineHeight = 18.sp,
@@ -320,7 +318,7 @@ fun SettingsDialog(
                     OutlinedTextField(
                         value = urlText,
                         onValueChange = { urlText = it },
-                        label = { Text("साइनबोर्ड वेबसाइट URL", color = Color(0xFFA0A0AB)) },
+                        label = { Text("Signage Website URL", color = Color(0xFFA0A0AB)) },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
@@ -368,12 +366,12 @@ fun SettingsDialog(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    text = "पहले से कॉन्फ़िगर टेम्पलेट्स चुनें...",
+                                    text = "Choose a preset URL...",
                                     color = Color(0xFFA0A0AB),
                                     fontSize = 14.sp
                                 )
                                 Text(
-                                    text = if (expandedDropdown) "▲" else "▼",
+                                    text = if (expandedDropdown) "Close" else "Open",
                                     color = Color.White,
                                     fontSize = 12.sp
                                 )
@@ -411,12 +409,12 @@ fun SettingsDialog(
                         .padding(top = 4.dp)
                 ) {
                     TvButton(
-                        text = "रद्द करें",
+                        text = "Cancel",
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f)
                     )
                     TvButton(
-                        text = "सेव और कनेक्ट",
+                        text = "Save and Connect",
                         onClick = {
                             if (urlText.isNotBlank()) {
                                 onSave(urlText)
