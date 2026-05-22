@@ -315,9 +315,20 @@ export default function SignagePreview({
 
   // Get all active and valid QR codes for display in the footer banner
   const qrItems = parseMultipleQrTexts(settings.qr_text, settings.qr_enabled);
-  const activeQrItems = settings.qr_enabled
+  let activeQrItems = settings.qr_enabled
     ? qrItems.filter(item => item.enabled && getQrItemValue(item).trim() !== '')
     : [];
+
+  if (settings.qr_enabled && activeQrItems.length === 0) {
+    const customItem = qrItems.find(item => item.id === 'custom') || qrItems[0];
+    if (customItem) {
+      activeQrItems = [{
+        ...customItem,
+        enabled: true,
+        customText: customItem.customText.trim() || settings.qr_text || 'https://github.com'
+      }];
+    }
+  }
 
   const getItemTransitionStyle = (index: number): React.CSSProperties => {
     const isCurrent = index === currentIndex;
@@ -821,7 +832,7 @@ export default function SignagePreview({
 
   // Render simulated view inside screen frame
   const playerScreen = (
-    <div className="relative w-full h-full aspect-video bg-black rounded-lg overflow-hidden flex shadow-2xl">
+    <div className="relative w-full h-full aspect-video bg-black rounded-lg overflow-hidden block shadow-2xl">
       {/* Dynamic Player Content */}
       {renderSignageContent()}
 
@@ -839,7 +850,7 @@ export default function SignagePreview({
   // Return full TV frame or simulated absolute fullscreen overlay
   if (pureScreenMode) {
     return (
-      <div className="relative w-screen h-screen bg-black overflow-hidden flex">
+      <div className="relative w-screen h-screen bg-black overflow-hidden block">
         {/* Dynamic Player Content */}
         {renderSignageContent()}
 

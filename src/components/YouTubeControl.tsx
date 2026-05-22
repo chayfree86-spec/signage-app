@@ -134,13 +134,12 @@ const YouTubePlaylistCard: React.FC<YouTubePlaylistCardProps> = ({
 
   const currentPreviewItem = previewItems[currentIndex];
   const videoId = currentPreviewItem ? getYouTubeId(currentPreviewItem.url) : null;
-
   return (
     <div
       onClick={onSelect}
-      className={`group relative rounded-2xl p-3.5 border transition-all duration-300 flex flex-col justify-between aspect-square cursor-pointer overflow-hidden bg-zinc-950 ${
+      className={`group relative rounded-2xl p-4 sm:p-5 border transition-all duration-500 flex flex-col justify-between aspect-square cursor-pointer overflow-hidden bg-zinc-950 ${
         isActive 
-          ? 'border-red-500/35 shadow-[0_0_15px_rgba(239,68,68,0.03)] bg-zinc-900/40' 
+          ? 'border-red-500/35 shadow-[0_0_20px_rgba(239,68,68,0.04)] bg-zinc-900/40' 
           : 'border-zinc-900 hover:border-red-500/25 hover:bg-zinc-900/10'
       }`}
     >
@@ -159,8 +158,8 @@ const YouTubePlaylistCard: React.FC<YouTubePlaylistCardProps> = ({
       )}
 
       {/* Top Section */}
-      <div className="relative z-10 space-y-1.5 pointer-events-none">
-        <div className="flex items-start justify-between gap-1.5">
+      <div className="relative z-10 space-y-2 pointer-events-none w-full">
+        <div className="flex items-start justify-between gap-1.5 w-full">
           <div className="flex-1 min-w-0">
             {isRenaming ? (
               <div className="flex items-center gap-1 pointer-events-auto" onClick={e => e.stopPropagation()}>
@@ -187,9 +186,9 @@ const YouTubePlaylistCard: React.FC<YouTubePlaylistCardProps> = ({
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-1 group/name pointer-events-auto">
+              <div className="flex items-start gap-1 group/name pointer-events-auto w-full">
                 <h3 
-                  className="font-bold text-white text-[12px] truncate group-hover:whitespace-normal group-hover:break-words uppercase tracking-wider transition-all duration-300"
+                  className="font-bold text-white text-[12px] uppercase tracking-wider group-hover:text-red-400 transition-colors whitespace-normal break-words flex-1 text-left"
                   title={playlist.name}
                 >
                   {playlist.name}
@@ -200,27 +199,27 @@ const YouTubePlaylistCard: React.FC<YouTubePlaylistCardProps> = ({
                     setEditingPlaylistId(playlist.id);
                     setPlaylistRenameInput(playlist.name);
                   }}
-                  className="opacity-0 group-hover/name:opacity-100 p-0.5 text-zinc-550 hover:text-red-500 transition-opacity cursor-pointer"
+                  className="opacity-0 group-hover/name:opacity-100 p-0.5 text-zinc-550 hover:text-red-500 transition-opacity cursor-pointer shrink-0"
                 >
                   <Edit2 size={10} />
                 </button>
               </div>
             )}
-            <p className="text-[10px] text-zinc-500 mt-0.5">
-              {playlist.items.length} Stream Slots
+            <p className="text-[10px] text-zinc-400 mt-1 font-semibold uppercase tracking-wider">
+              {playlist.items.length} Stream Slot{playlist.items.length !== 1 ? 's' : ''}
             </p>
           </div>
 
-          {/* Active Status Badge */}
+          {/* Active Status Toggler Pill */}
           <button
             onClick={(e) => onTogglePlaylistActive(playlist.id, e)}
-            className={`px-2.5 py-0.5 rounded-lg border text-[8px] font-black uppercase tracking-widest cursor-pointer transition-all shrink-0 pointer-events-auto ${
+            className={`px-2.5 py-0.5 rounded border text-[8px] font-black uppercase tracking-widest cursor-pointer transition-all shrink-0 pointer-events-auto shadow-md backdrop-blur-sm z-10 ${
               isActive 
-                ? 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20' 
-                : 'bg-zinc-950/40 border-zinc-900/60 text-zinc-550 hover:text-zinc-400 hover:border-zinc-800'
+                ? 'bg-red-500/20 border-red-500/40 text-red-400 hover:bg-red-500/30' 
+                : 'bg-black/60 border-zinc-850 text-zinc-450 hover:text-white'
             }`}
           >
-            {isActive ? 'Active' : 'Activate'}
+            {isActive ? 'Active' : 'Off'}
           </button>
         </div>
       </div>
@@ -236,7 +235,7 @@ const YouTubePlaylistCard: React.FC<YouTubePlaylistCardProps> = ({
       )}
 
       {/* Bottom Section */}
-      <div className="relative z-10 flex items-center justify-between pt-2 border-t border-zinc-900/40 mt-auto">
+      <div className="relative z-10 flex items-center justify-between pt-2.5 border-t border-zinc-900/40 mt-auto">
         <span className="flex items-center gap-1 text-[9.5px] text-red-500 font-extrabold uppercase tracking-wider group-hover:text-white transition-colors">
           <FolderOpen size={11} className="shrink-0" />
           <span>Manage Links</span>
@@ -245,10 +244,10 @@ const YouTubePlaylistCard: React.FC<YouTubePlaylistCardProps> = ({
         {showDeleteButton && (
           <button
             onClick={(e) => onDeletePlaylist(playlist.id, e)}
-            className="p-1 text-zinc-555 hover:text-red-500 rounded hover:bg-red-500/10 transition-all cursor-pointer"
+            className="p-1.5 text-zinc-500 hover:text-red-500 rounded-lg hover:bg-red-500/10 transition-all cursor-pointer pointer-events-auto"
             title="Delete Playlist"
           >
-            <Trash2 size={12} />
+            <Trash2 size={11.5} />
           </button>
         )}
       </div>
@@ -826,7 +825,7 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
           </div>
 
           {/* List Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
             {playlists.map((playlist) => (
               <YouTubePlaylistCard
                 key={playlist.id}

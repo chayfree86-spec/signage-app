@@ -99,7 +99,7 @@ export default function GeneralSettings({
 
   const handleSaveDrive = async () => {
     if (!driveEmail.trim() || !drivePrivateKey.trim() || !driveFolderId.trim()) {
-      setDriveError('सभी फ़ील्ड्स (Email, Private Key, Folder ID) आवश्यक हैं।');
+      setDriveError('All fields (Email, Private Key, Folder ID) are required.');
       return;
     }
 
@@ -121,10 +121,10 @@ export default function GeneralSettings({
       const data = await res.json();
 
       if (!res.ok || data.error) {
-        setDriveError(data.error || 'कनेक्शन विफल रहा। क्रेडेंशियल्स की जांच करें।');
+        setDriveError(data.error || 'Connection failed. Please check credentials.');
       } else {
-        setDriveSuccess(data.message || 'Google Drive सफलतापूर्वक कनेक्ट हो गया!');
-        setDrivePrivateKey(''); // सुरक्षा कारणों से क्लियर करें
+        setDriveSuccess(data.message || 'Google Drive connected successfully!');
+        setDrivePrivateKey(''); // Clear for security reasons
         setIsEditingDrive(false);
         await fetchDriveStatus();
         if (onReloadData) {
@@ -132,14 +132,14 @@ export default function GeneralSettings({
         }
       }
     } catch (err: any) {
-      setDriveError(err.message || 'कन्फ़िगरेशन के दौरान एक त्रुटि आई।');
+      setDriveError(err.message || 'An error occurred during configuration.');
     } finally {
       setSavingDrive(false);
     }
   };
 
   const handleDisconnectDrive = async () => {
-    if (!confirm('क्या आप सचमुच Google Drive को डिस्कनेक्ट करना चाहते हैं? फ़ाइलें लोकल ब्राउज़र स्टोरेज (IndexedDB) में सेव होने लगेंगी।')) {
+    if (!confirm('Are you sure you want to disconnect Google Drive? Files will be saved in local browser storage (IndexedDB).')) {
       return;
     }
 
@@ -157,9 +157,9 @@ export default function GeneralSettings({
       const data = await res.json();
 
       if (!res.ok || data.error) {
-        setDriveError(data.error || 'डिस्कनेक्ट करने में विफल।');
+        setDriveError(data.error || 'Failed to disconnect.');
       } else {
-        setDriveSuccess('Google Drive सफलतापूर्वक डिस्कनेक्ट हो गया!');
+        setDriveSuccess('Google Drive successfully disconnected!');
         setDriveEmail('');
         setDrivePrivateKey('');
         setDriveFolderId('');
@@ -170,7 +170,7 @@ export default function GeneralSettings({
         }
       }
     } catch (err: any) {
-      setDriveError(err.message || 'एक त्रुटि आई।');
+      setDriveError(err.message || 'An error occurred.');
     } finally {
       setSavingDrive(false);
     }
@@ -354,15 +354,15 @@ export default function GeneralSettings({
               disabled={savingDrive}
               className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-zinc-900 hover:bg-red-950/30 hover:border-red-900/40 text-zinc-400 hover:text-red-400 font-bold text-[11px] transition-all duration-300 border border-zinc-850 cursor-pointer disabled:opacity-40"
             >
-              <Trash size={12} /> Google Drive Disconnect (लोकल मोड)
+              <Trash size={12} /> Google Drive Disconnect (Local Mode)
             </button>
           </div>
         ) : (
           <div className="space-y-3">
             <p className="text-[10.5px] text-zinc-400 leading-relaxed">
               {driveConfig?.configured 
-                ? 'Google Drive credentials को अपडेट करने के लिए नीचे दी गई जानकारी भरें:' 
-                : 'Google Drive क्रेडेंशियल्स दर्ज करें। फाइलें सीधे Google Drive क्लाउड स्टोरेज पर सेव होंगी।'}
+                ? 'Fill in the information below to update Google Drive credentials:' 
+                : 'Enter Google Drive credentials. Files will be saved directly to Google Drive cloud storage.'}
             </p>
             
             <div className="space-y-2.5">

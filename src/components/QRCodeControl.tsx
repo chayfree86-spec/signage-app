@@ -417,14 +417,20 @@ export default function QRCodeControl({ text, enabled, position, size, onUpdate 
   const [expandedId, setExpandedId] = useState<QrItem['id'] | 'social_media_group' | null>('payment');
   const [socialDropdownOpen, setSocialDropdownOpen] = useState(false);
   const socialDropdownRef = useRef<HTMLDivElement>(null);
+  
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isEditingRef = useRef<boolean>(false);
 
   // Sync with database updates during render phase
   const [prevText, setPrevText] = useState(text);
   const [prevEnabled, setPrevEnabled] = useState(enabled);
   if (text !== prevText || enabled !== prevEnabled) {
-    setQrItems(parseMultipleQrTexts(text, enabled));
     setPrevText(text);
     setPrevEnabled(enabled);
+    // Only overwrite local state if the user is not actively typing
+    if (!isEditingRef.current) {
+      setQrItems(parseMultipleQrTexts(text, enabled));
+    }
   }
 
   // Click outside listener for custom dropdown list
@@ -438,6 +444,15 @@ export default function QRCodeControl({ text, enabled, position, size, onUpdate 
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
   const updateQrItem = (id: QrItem['id'], updates: Partial<QrItem>) => {
     const updatedItems = qrItems.map(item => {
       if (item.id === id) {
@@ -447,8 +462,19 @@ export default function QRCodeControl({ text, enabled, position, size, onUpdate 
     });
     setQrItems(updatedItems);
     
-    // Save serialized list in qr_text database field
-    onUpdate({ qr_text: JSON.stringify(updatedItems) });
+    // Set editing flag to block prop sync overwrites
+    isEditingRef.current = true;
+
+    // Debounce the network update
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    debounceTimerRef.current = setTimeout(async () => {
+      debounceTimerRef.current = null;
+      isEditingRef.current = false;
+      await onUpdate({ qr_text: JSON.stringify(updatedItems) });
+    }, 600);
   };
 
   const toggleExpand = (id: QrItem['id'] | 'social_media_group') => {
@@ -456,7 +482,29 @@ export default function QRCodeControl({ text, enabled, position, size, onUpdate 
   };
 
   const toggleEnabled = () => {
-    onUpdate({ qr_enabled: !enabled });
+    const nextEnabled = !enabled;
+    const updatePayload: { qr_enabled: boolean; qr_text?: string } = { qr_enabled: nextEnabled };
+    
+    if (nextEnabled) {
+      const anyActive = qrItems.some(item => item.enabled && getQrItemValue(item).trim() !== '');
+      if (!anyActive) {
+        // Automatically enable custom link with default value if all are empty/disabled
+        const updatedItems = qrItems.map(item => {
+          if (item.id === 'custom') {
+            return {
+              ...item,
+              enabled: true,
+              customText: item.customText.trim() || 'https://github.com'
+            };
+          }
+          return item;
+        });
+        setQrItems(updatedItems);
+        updatePayload.qr_text = JSON.stringify(updatedItems);
+      }
+    }
+    
+    onUpdate(updatePayload);
   };
 
   // Render forms inside the selected accordion item

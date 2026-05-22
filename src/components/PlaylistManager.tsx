@@ -305,13 +305,13 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({
   return (
     <div
       onClick={onSelect}
-      className={`group glass-panel rounded-2xl p-2.5 border transition-all duration-500 flex flex-col justify-between h-full min-h-[195px] cursor-pointer hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(250,204,21,0.06)] hover:border-yellow-500/20 ${
+      className={`group glass-panel rounded-2xl p-3 sm:p-4 border transition-all duration-500 flex flex-col justify-between h-full min-h-[210px] cursor-pointer hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(250,204,21,0.06)] hover:border-yellow-500/20 ${
         playlist.is_online 
           ? 'border-yellow-500/35 shadow-[0_0_20px_rgba(250,204,21,0.04)] bg-zinc-900/55' 
           : 'border-zinc-900 hover:border-zinc-800 hover:bg-zinc-900/10'
       }`}
     >
-      <div className="flex flex-col gap-2 min-h-0">
+      <div className="flex flex-col gap-3 min-h-0">
         {/* Aspect Ratio Box with Auto Image Slide */}
         <div className="relative overflow-hidden aspect-[1.8] rounded-xl border border-zinc-950/60 bg-zinc-950/80 group-hover:border-zinc-800/80 transition-colors shrink-0">
           {slideshowItems.length > 0 ? (
@@ -361,52 +361,48 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({
           )}
 
           {/* Media overlay count badge */}
-          <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/60 border border-zinc-800/50 backdrop-blur-sm text-[7.5px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-0.5 select-none">
+          <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/60 border border-zinc-800/50 backdrop-blur-sm text-[7.5px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-0.5 select-none z-10">
             <Film size={7.5} className="text-yellow-500" />
             <span>{playlist.items.length} file{playlist.items.length !== 1 ? 's' : ''}</span>
           </div>
+
+          {/* Sleek Absolute Active Toggle Toggler inside the thumbnail */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation(); // Prevent opening editor!
+              onToggleActive(!playlist.active);
+            }}
+            className={`absolute top-1.5 right-1.5 px-2 py-0.5 rounded border text-[8px] font-black uppercase tracking-widest cursor-pointer transition-all shadow-md backdrop-blur-sm select-none z-10 ${
+              playlist.active 
+                ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/30' 
+                : 'bg-black/60 border-zinc-850 text-zinc-450 hover:text-white'
+            }`}
+            title={playlist.active ? 'Turn Inactive' : 'Turn Active'}
+          >
+            {playlist.active ? 'Active' : 'Off'}
+          </button>
         </div>
 
         {/* Info */}
-        <div className="space-y-1 min-h-0">
-          <div className="flex items-start justify-between gap-1.5">
-            <div className="flex flex-col min-w-0">
-              <div className="flex items-center gap-1 flex-wrap">
-                <h3 
-                  className="font-bold text-white text-[11px] truncate group-hover:whitespace-normal group-hover:break-words uppercase tracking-wider transition-all duration-300"
-                  title={playlist.name}
-                >
-                  {playlist.name}
-                </h3>
-                {playlist.is_online && (
-                  <span className="flex items-center gap-0.5 text-[6.5px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-950/50 px-1 py-0.5 rounded-full border border-emerald-900/40 status-pulse">
-                    <span className="w-1 h-1 bg-emerald-400 rounded-full" />
-                    Live
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Manual Toggle Switch Button */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation(); // Prevent opening editor!
-                onToggleActive(!playlist.active);
-              }}
-              className={`px-1.5 py-0.5 rounded border text-[7.5px] font-black uppercase tracking-widest cursor-pointer transition-all shrink-0 ${
-                playlist.active 
-                  ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-500 hover:bg-yellow-500/20' 
-                  : 'bg-zinc-950/40 border-zinc-900/60 text-zinc-550 hover:text-zinc-400'
-              }`}
-              title={playlist.active ? 'Turn Inactive' : 'Turn Active'}
+        <div className="space-y-2.5 min-h-0">
+          <div className="flex items-start justify-between gap-2">
+            <h3 
+              className="font-bold text-white text-[12px] whitespace-normal break-words uppercase tracking-wider group-hover:text-yellow-400 transition-colors flex-1 text-left"
+              title={playlist.name}
             >
-              {playlist.active ? 'Active' : 'Off'}
-            </button>
+              {playlist.name}
+            </h3>
+            {playlist.is_online && (
+              <span className="flex items-center gap-1 text-[7px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-950/40 px-1.5 py-0.5 rounded-full border border-emerald-900/30 status-pulse shrink-0">
+                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                Live
+              </span>
+            )}
           </div>
 
           {/* Scheduling status summary text */}
-          <div className="flex items-center gap-1.5 text-[8.5px] text-zinc-450 bg-zinc-950/30 px-2 py-1 rounded-xl border border-zinc-900/40 font-medium">
-            <Calendar size={9.5} className="text-zinc-655 shrink-0" />
+          <div className="flex items-center gap-2 text-[9px] text-zinc-400 bg-zinc-950/40 px-2.5 py-1.5 rounded-xl border border-zinc-900/50 font-medium">
+            <Calendar size={11} className="text-zinc-550 shrink-0" />
             <span className="truncate">
               {playlist.schedule_enabled ? (
                 <>
@@ -422,9 +418,9 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({
       </div>
 
       {/* Footer Action Links */}
-      <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-zinc-900/50">
-        <span className="flex items-center gap-0.5 text-[8.5px] text-yellow-500 font-extrabold uppercase tracking-wider group-hover:text-white transition-colors">
-          <FolderOpen size={10.5} className="shrink-0" />
+      <div className="flex items-center justify-between gap-1.5 pt-2.5 border-t border-zinc-900/40 mt-1">
+        <span className="flex items-center gap-1 text-[9.5px] text-yellow-500 font-extrabold uppercase tracking-wider group-hover:text-white transition-colors">
+          <FolderOpen size={11} className="shrink-0" />
           <span>Queue</span>
         </span>
 
@@ -434,17 +430,17 @@ const PlaylistCard: React.FC<PlaylistCardProps> = ({
               e.stopPropagation(); // Prevent opening editor!
               onDelete();
             }}
-            className="p-1 text-zinc-650 hover:text-red-500 rounded hover:bg-red-500/10 transition-all cursor-pointer"
+            className="p-1.5 text-zinc-500 hover:text-red-500 rounded-lg hover:bg-red-500/10 transition-all cursor-pointer"
             title="Delete playlist"
           >
-            <Trash2 size={10.5} />
+            <Trash2 size={11.5} />
           </button>
         ) : (
           <div 
-            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-zinc-950/40 border border-zinc-900/50 text-zinc-600 select-none"
+            className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-950/40 border border-zinc-900/50 text-zinc-500 select-none"
             title="System Default Playlist (Cannot be deleted)"
           >
-            <Lock size={8.5} className="text-zinc-500" />
+            <Lock size={9} className="text-zinc-500 shrink-0" />
             <span className="text-[7.5px] font-black uppercase tracking-wider">Locked</span>
           </div>
         )}
@@ -480,6 +476,10 @@ export default function PlaylistManager({
   // Google Drive background synchronization state
   const [syncState, setSyncState] = useState<'synced' | 'syncing' | 'error' | 'idle'>('idle');
   const [syncMessage, setSyncMessage] = useState('');
+
+  // Supabase Database background synchronization state
+  const [dbSyncState, setDbSyncState] = useState<'synced' | 'syncing' | 'error' | 'idle'>('idle');
+  const [dbSyncMessage, setDbSyncMessage] = useState('');
 
   // Signage player status sync state
   const [playingState, setPlayingState] = useState<{ itemId: string | null; progress: number }>({ itemId: null, progress: 0 });
@@ -534,12 +534,35 @@ export default function PlaylistManager({
       }
     };
 
+    const handleDbSyncing = () => {
+      setDbSyncState('syncing');
+    };
+    const handleDbSynced = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && customEvent.detail.success) {
+        setDbSyncState('synced');
+        setDbSyncMessage(customEvent.detail.message || 'Synced to Supabase');
+        const timer = setTimeout(() => setDbSyncState('idle'), 3000); // Clear after 3s
+        return () => clearTimeout(timer);
+      } else {
+        setDbSyncState('error');
+        const errMsg = customEvent.detail?.error || 'Database sync failed';
+        setDbSyncMessage(errMsg);
+        const timer = setTimeout(() => setDbSyncState('idle'), 5000);
+        return () => clearTimeout(timer);
+      }
+    };
+
     window.addEventListener('playlists-syncing', handleSyncing);
     window.addEventListener('playlists-synced', handleSynced);
+    window.addEventListener('supabase-syncing', handleDbSyncing);
+    window.addEventListener('supabase-synced', handleDbSynced);
 
     return () => {
       window.removeEventListener('playlists-syncing', handleSyncing);
       window.removeEventListener('playlists-synced', handleSynced);
+      window.removeEventListener('supabase-syncing', handleDbSyncing);
+      window.removeEventListener('supabase-synced', handleDbSynced);
     };
   }, []);
   
@@ -1141,6 +1164,24 @@ export default function PlaylistManager({
                   </span>
                 </div>
               )}
+
+              {/* Supabase Database Playlist Sync Indicator */}
+              {dbSyncState !== 'idle' && (
+                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[9px] font-bold border backdrop-blur-sm animate-fadeIn shrink-0 ${
+                  dbSyncState === 'syncing' 
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-500' 
+                    : dbSyncState === 'synced'
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-450'
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-450'
+                }`}>
+                  {dbSyncState === 'syncing' && <Loader2 size={11} className="animate-spin text-amber-500" />}
+                  {dbSyncState === 'synced' && <Check size={11} className="text-emerald-450" />}
+                  {dbSyncState === 'error' && <AlertCircle size={11} className="text-rose-450" />}
+                  <span className="uppercase tracking-wider font-extrabold text-[8px]">
+                    {dbSyncState === 'syncing' ? 'SQL Syncing...' : dbSyncState === 'synced' ? 'SQL Synced!' : 'SQL Sync Failed'}
+                  </span>
+                </div>
+              )}
             </div>
             
             <button
@@ -1179,7 +1220,7 @@ export default function PlaylistManager({
           )}
 
           {/* List of Playlists */}
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10 gap-2 items-stretch">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 items-stretch">
             {playlists.map((playlist) => (
               <PlaylistCard
                 key={playlist.id}
@@ -1246,7 +1287,22 @@ export default function PlaylistManager({
                       {syncState === 'syncing' && <Loader2 size={10} className="animate-spin" />}
                       {syncState === 'synced' && <Check size={10} />}
                       {syncState === 'error' && <AlertCircle size={10} />}
-                      <span>{syncState === 'syncing' ? 'Syncing...' : syncState === 'synced' ? 'Synced' : 'Failed'}</span>
+                      <span>{syncState === 'syncing' ? 'Drive Syncing...' : syncState === 'synced' ? 'Drive Synced' : 'Drive Failed'}</span>
+                    </span>
+                  )}
+
+                  {dbSyncState !== 'idle' && (
+                    <span className={`flex items-center gap-1 text-[8.5px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border shrink-0 ${
+                      dbSyncState === 'syncing' 
+                        ? 'bg-amber-500/10 border-amber-500/40 text-amber-500' 
+                        : dbSyncState === 'synced'
+                        ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-450'
+                        : 'bg-rose-500/10 border-rose-500/40 text-rose-450'
+                    }`}>
+                      {dbSyncState === 'syncing' && <Loader2 size={10} className="animate-spin" />}
+                      {dbSyncState === 'synced' && <Check size={10} />}
+                      {dbSyncState === 'error' && <AlertCircle size={10} />}
+                      <span>{dbSyncState === 'syncing' ? 'SQL Syncing...' : dbSyncState === 'synced' ? 'SQL Synced' : 'SQL Failed'}</span>
                     </span>
                   )}
                 </div>

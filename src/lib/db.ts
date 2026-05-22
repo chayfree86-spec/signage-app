@@ -280,6 +280,22 @@ export async function fetchSettings(): Promise<SignageSettings> {
   return DEFAULT_SETTINGS;
 }
 
+export function sanitizeSettingsForDb(settings: SignageSettings) {
+  return {
+    youtube_url: settings.youtube_url,
+    youtube_enabled: settings.youtube_enabled,
+    qr_text: settings.qr_text,
+    qr_enabled: settings.qr_enabled,
+    qr_position: settings.qr_position,
+    qr_size: Number(settings.qr_size),
+    slide_duration: Number(settings.slide_duration),
+    mute: settings.mute,
+    youtube_active_id: settings.youtube_active_id || null,
+    youtube_playlists: settings.youtube_playlists || null,
+    youtube_loop: settings.youtube_loop !== undefined ? settings.youtube_loop : true,
+  };
+}
+
 export async function updateSettings(settings: Partial<SignageSettings>): Promise<SignageSettings> {
   const current = await fetchSettings();
   const updated = { ...current, ...settings };
@@ -288,24 +304,29 @@ export async function updateSettings(settings: Partial<SignageSettings>): Promis
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
+      window.dispatchEvent(new CustomEvent('supabase-syncing'));
+      const dbPayload = sanitizeSettingsForDb(updated);
+      
       // Get settings count first
       const { data } = await supabase.from('settings').select('id').limit(1);
       if (data && data.length > 0) {
         // Update existing row (assuming single-row layout)
         const { error } = await supabase
           .from('settings')
-          .update(updated)
+          .update(dbPayload)
           .eq('id', data[0].id);
         if (error) throw error;
       } else {
         // Insert new settings row
         const { error } = await supabase
           .from('settings')
-          .insert([updated]);
+          .insert([dbPayload]);
         if (error) throw error;
       }
+      window.dispatchEvent(new CustomEvent('supabase-synced', { detail: { success: true } }));
     } catch (e) {
-      console.warn('Supabase settings update failed, falling back to local:', e);
+      console.error('Supabase settings update failed in db.ts:', e);
+      window.dispatchEvent(new CustomEvent('supabase-synced', { detail: { success: false, error: (e as Error).message } }));
     }
   }
 
@@ -679,7 +700,60 @@ export async function updatePlaylistOrder(orderedIds: string[]): Promise<void> {
 export async function fetchPlaylists(): Promise<Playlist[]> {
   if (typeof window === 'undefined') return [];
 
-  // Try fetching from Google Drive first if configured
+  let shouldSeedSupabase = false;
+
+  // 1. Try fetching from Supabase SQL database first (source of truth)
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('playlists')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (!error && data) {
+        if (data.length > 0) {
+          const parsed = data.map(row => ({
+            id: row.id,
+            name: row.name,
+            active: !!row.active,
+            is_online: !!row.is_online,
+            schedule_enabled: !!row.schedule_enabled,
+            schedule_start_date: row.schedule_start_date || undefined,
+            schedule_end_date: row.schedule_end_date || undefined,
+            schedule_start_time: row.schedule_start_time || undefined,
+            schedule_end_time: row.schedule_end_time || undefined,
+            items: Array.isArray(row.items) ? row.items : [],
+            created_at: row.created_at,
+            transition_style: row.transition_style || 'fade-scale',
+          })) as Playlist[];
+
+          // Dynamic regeneration of Blob URLs for all local files in playlists
+          // to resolve broken thumbnails on browser page reloads
+          for (const playlist of parsed) {
+            for (const item of playlist.items) {
+              const blob = await getLocalFile(item.id);
+              if (blob) {
+                item.url = makeBlobUrl(item.id, blob);
+                item.localBlob = blob;
+              }
+            }
+          }
+
+          // Save to local storage cache
+          localStorage.setItem('signage_playlists', JSON.stringify(parsed));
+          return parsed;
+        } else {
+          // Connected successfully but database playlists table is empty. Mark for seeding!
+          shouldSeedSupabase = true;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch playlists from Supabase, falling back to Google Drive:', e);
+    }
+  }
+
+  // 2. Try fetching from Google Drive if configured
   const isDriveConfigured = await checkGoogleDriveConfigured();
   if (isDriveConfigured) {
     try {
@@ -694,7 +768,6 @@ export async function fetchPlaylists(): Promise<Playlist[]> {
           const parsed = data.playlists as Playlist[];
           
           // Dynamic regeneration of Blob URLs for all local files in playlists
-          // to resolve broken thumbnails on browser page reloads
           for (const playlist of parsed) {
             for (const item of playlist.items) {
               const blob = await getLocalFile(item.id);
@@ -708,6 +781,12 @@ export async function fetchPlaylists(): Promise<Playlist[]> {
           // Save to local storage cache
           localStorage.setItem('signage_playlists', JSON.stringify(parsed));
           window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { success: true } }));
+          
+          // Seed Supabase in background if connected and empty
+          if (supabase && shouldSeedSupabase) {
+            savePlaylists(parsed);
+          }
+          
           return parsed;
         }
       }
@@ -718,14 +797,13 @@ export async function fetchPlaylists(): Promise<Playlist[]> {
     }
   }
 
-  // Fallback to localStorage
+  // 3. Fallback to localStorage
   const saved = localStorage.getItem('signage_playlists');
   if (saved) {
     try {
       const parsed = JSON.parse(saved) as Playlist[];
       
       // Dynamic regeneration of Blob URLs for all local files in playlists
-      // to resolve broken thumbnails on browser page reloads
       for (const playlist of parsed) {
         for (const item of playlist.items) {
           const blob = await getLocalFile(item.id);
@@ -734,6 +812,11 @@ export async function fetchPlaylists(): Promise<Playlist[]> {
             item.localBlob = blob;
           }
         }
+      }
+      
+      // Seed Supabase in background if connected and empty
+      if (supabase && shouldSeedSupabase) {
+        savePlaylists(parsed);
       }
       
       return parsed;
@@ -757,7 +840,10 @@ export async function fetchPlaylists(): Promise<Playlist[]> {
   const initialList = [defaultPlaylist];
   localStorage.setItem('signage_playlists', JSON.stringify(initialList));
   
-  // If drive is active, sync the initial seeded list to Drive in background
+  // Seed everywhere
+  if (supabase) {
+    savePlaylists(initialList);
+  }
   if (isDriveConfigured) {
     savePlaylists(initialList);
   }
@@ -769,7 +855,52 @@ export function savePlaylists(playlists: Playlist[]): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem('signage_playlists', JSON.stringify(playlists));
   
-  // Asynchronous background sync to Google Drive if configured
+  // 1. Sync to Supabase SQL Database in the background
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    const upsertData = playlists.map(p => ({
+      id: p.id,
+      name: p.name,
+      active: p.active,
+      is_online: p.is_online,
+      schedule_enabled: p.schedule_enabled,
+      schedule_start_date: p.schedule_start_date || null,
+      schedule_end_date: p.schedule_end_date || null,
+      schedule_start_time: p.schedule_start_time || null,
+      schedule_end_time: p.schedule_end_time || null,
+      items: p.items,
+      transition_style: p.transition_style || 'fade-scale',
+      created_at: p.created_at
+    }));
+
+    // Use an async IIFE to make background sync robust
+    (async () => {
+      try {
+        window.dispatchEvent(new CustomEvent('supabase-syncing'));
+        const { data: existing, error: selectError } = await supabase.from('playlists').select('id');
+        if (selectError) throw selectError;
+
+        const existingIds = existing ? existing.map((e: { id: string }) => e.id) : [];
+        const currentIds = playlists.map(p => p.id);
+        const toDelete = existingIds.filter(id => !currentIds.includes(id));
+        
+        if (toDelete.length > 0) {
+          const { error: deleteError } = await supabase.from('playlists').delete().in('id', toDelete);
+          if (deleteError) throw deleteError;
+        }
+        
+        const { error: upsertError } = await supabase.from('playlists').upsert(upsertData);
+        if (upsertError) throw upsertError;
+
+        window.dispatchEvent(new CustomEvent('supabase-synced', { detail: { success: true } }));
+      } catch (err) {
+        console.error('Error syncing playlists to Supabase:', err);
+        window.dispatchEvent(new CustomEvent('supabase-synced', { detail: { success: false, error: (err as Error).message } }));
+      }
+    })();
+  }
+
+  // 2. Asynchronous background sync to Google Drive if configured
   checkGoogleDriveConfigured().then(configured => {
     if (configured) {
       window.dispatchEvent(new CustomEvent('playlists-syncing'));

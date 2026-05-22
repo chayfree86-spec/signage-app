@@ -155,6 +155,7 @@ class MainActivity : ComponentActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun setupWebView(webView: WebView) {
+        webView.setBackgroundColor(0) // Make background transparent to show Compose premium dark theme underneath
         with(webView.settings) {
             javaScriptEnabled = true
             domStorageEnabled = true
