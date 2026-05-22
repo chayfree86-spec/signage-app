@@ -1,4 +1,4 @@
-import { cp, mkdir, readdir, rm } from 'node:fs/promises';
+import { access, cp, mkdir, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 
 const root = process.cwd();
@@ -19,6 +19,16 @@ async function copyPublicEntry(entry) {
   });
 }
 
+async function copyIfExists(source, destination) {
+  try {
+    await access(source);
+    await cp(source, destination, { recursive: true });
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+    console.warn(`Skipping missing optional file: ${path.relative(root, source)}`);
+  }
+}
+
 await rm(outputDir, { force: true, recursive: true });
 await mkdir(path.join(outputDir, '.next'), { recursive: true });
 await mkdir(path.join(outputDir, 'public'), { recursive: true });
@@ -29,6 +39,6 @@ await cp(path.join(root, '.next', 'static'), path.join(outputDir, '.next', 'stat
 });
 
 await Promise.all((await readdir(path.join(root, 'public'), { withFileTypes: true })).map(copyPublicEntry));
-await cp(path.join(root, '.env.example'), path.join(outputDir, '.env.example'));
+await copyIfExists(path.join(root, '.env.example'), path.join(outputDir, '.env.example'));
 
 console.log('Prepared self-host deployment in output/.');
