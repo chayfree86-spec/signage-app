@@ -965,6 +965,7 @@ export default function PlaylistManager({
 
     try {
       const newUploadedItems: MediaItem[] = [];
+      const queuedIds = new Set(managedPlaylist.items.map(item => item.id));
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -979,7 +980,15 @@ export default function PlaylistManager({
 
         // Upload and get seeded local/supabase media object
         const media = await uploadMediaItem(file);
-        newUploadedItems.push(media);
+        if (!queuedIds.has(media.id)) {
+          newUploadedItems.push(media);
+          queuedIds.add(media.id);
+        }
+      }
+
+      if (newUploadedItems.length === 0) {
+        setErrorMsg('Selected file is already in this playlist.');
+        return;
       }
 
       // Append items to the currently managed playlist

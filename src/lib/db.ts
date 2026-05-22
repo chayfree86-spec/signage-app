@@ -534,10 +534,15 @@ export async function checkGoogleDriveConfigured(): Promise<boolean> {
 }
 
 export async function uploadMediaItem(file: File): Promise<MediaItem> {
-  const id = crypto.randomUUID();
   const type: 'image' | 'video' = file.type.startsWith('video/') ? 'video' : 'image';
   const name = file.name;
   const size = file.size;
+  const duplicate = await findExistingMediaForFile(file, type);
+  if (duplicate) {
+    return duplicate;
+  }
+
+  const id = await createStableMediaId(file);
   const created_at = new Date().toISOString();
 
   // Find next position index
@@ -568,8 +573,13 @@ export async function uploadMediaItem(file: File): Promise<MediaItem> {
 }
 
 export async function saveUploadedMediaToSupabase(file: File): Promise<MediaItem> {
-  const id = crypto.randomUUID();
   const type: MediaItem['type'] = file.type.startsWith('video/') ? 'video' : 'image';
+  const duplicate = await findExistingMediaForFile(file, type);
+  if (duplicate) {
+    return duplicate;
+  }
+
+  const id = await createStableMediaId(file);
   const list = await fetchMedia();
   const position = list.length > 0 ? Math.max(...list.map(m => m.position)) + 1 : 0;
   const createdAt = new Date().toISOString();
@@ -592,9 +602,40 @@ export async function saveUploadedMediaToSupabase(file: File): Promise<MediaItem
   }
 
   const { error } = await supabase.from('media').insert([mediaItem]);
-  if (error) throw error;
+  if (error) {
+    const existing = await findExistingMediaForFile(file, type);
+    if (existing) {
+      return existing;
+    }
+    throw error;
+  }
 
   return mediaItem;
+}
+
+async function createStableMediaId(file: File): Promise<string> {
+  const hash = await hashFile(file);
+  return `sha256-${hash}`;
+}
+
+async function hashFile(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest))
+    .map(byte => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function findExistingMediaForFile(file: File, type: MediaItem['type']): Promise<MediaItem | null> {
+  const stableId = await createStableMediaId(file);
+  const media = await fetchMedia();
+
+  return media.find(item => item.id === stableId)
+    || media.find(item =>
+      item.type === type
+      && item.name === file.name
+      && Number(item.size || 0) === file.size
+    )
+    || null;
 }
 
 async function uploadSupabaseMediaFile(
@@ -742,10 +783,18 @@ export async function updatePlaylistOrder(orderedIds: string[]): Promise<void> {
 export async function fetchPlaylists(): Promise<Playlist[]> {
   if (typeof window === 'undefined') return [];
 
-  // ============================================================
-  // FAST PATH: Return from localStorage immediately.
-  // Supabase/Drive sync will happen in background.
-  // ============================================================
+  const supabasePlaylists = await fetchPlaylistsFromSupabase();
+  if (supabasePlaylists) {
+    localStorage.setItem('signage_playlists', JSON.stringify(supabasePlaylists));
+    return supabasePlaylists;
+  }
+
+  const drivePlaylists = await fetchPlaylistsFromDrive();
+  if (drivePlaylists) {
+    localStorage.setItem('signage_playlists', JSON.stringify(drivePlaylists));
+    return drivePlaylists;
+  }
+
   const saved = localStorage.getItem('signage_playlists');
   if (saved) {
     try {
@@ -757,8 +806,6 @@ export async function fetchPlaylists(): Promise<Playlist[]> {
         ...p,
         items: p.items.map(item => ({ ...item })),
       }));
-      // Trigger background sync from authoritative sources
-      syncPlaylistsFromSourcesInBackground();
       return result;
     } catch {
       // Fall through to build default
@@ -781,8 +828,58 @@ export async function fetchPlaylists(): Promise<Playlist[]> {
 
   const initialList = [defaultPlaylist];
   localStorage.setItem('signage_playlists', JSON.stringify(initialList));
-  syncPlaylistsFromSourcesInBackground();
   return initialList;
+}
+
+async function fetchPlaylistsFromSupabase(): Promise<Playlist[] | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  try {
+    const [{ data: playlistRows, error: playlistError }, { data: mediaRows, error: mediaError }] = await Promise.all([
+      supabase.from('playlists').select('*').order('created_at', { ascending: true }),
+      supabase.from('media').select('*').order('position', { ascending: true }),
+    ]);
+
+    if (playlistError) throw playlistError;
+    if (mediaError) throw mediaError;
+    if (!playlistRows || playlistRows.length === 0) return null;
+
+    const mediaById = new Map<string, MediaItem>();
+    for (const row of mediaRows || []) {
+      const id = String(row.id || '');
+      if (id) {
+        mediaById.set(id, mapSupabaseMediaRow(row));
+      }
+    }
+
+    return mapSupabasePlaylists(playlistRows, mediaById);
+  } catch (error) {
+    console.warn('Supabase playlist fetch failed, trying Drive/local fallback:', error);
+    return null;
+  }
+}
+
+async function fetchPlaylistsFromDrive(): Promise<Playlist[] | null> {
+  const isDriveConfigured = await checkGoogleDriveConfigured();
+  if (!isDriveConfigured) return null;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch('/api/drive/playlist', { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    if (data.success && Array.isArray(data.playlists)) {
+      return data.playlists as Playlist[];
+    }
+  } catch {
+    // Local fallback handles unavailable Drive.
+  }
+
+  return null;
 }
 
 export async function syncScreenPlaylistsFromSupabase(): Promise<Playlist[]> {
@@ -984,66 +1081,6 @@ async function regenerateBlobUrls(playlists: Playlist[]): Promise<void> {
       }
     }
   }
-}
-
-// Background sync from Supabase then Drive (fire-and-forget)
-function syncPlaylistsFromSourcesInBackground(): void {
-  if (typeof window === 'undefined') return;
-
-  (async () => {
-    // Try Supabase first
-    const supabase = getSupabaseClient();
-    if (supabase) {
-      try {
-        const [{ data: playlistRows, error: playlistError }, { data: mediaRows, error: mediaError }] = await Promise.all([
-          supabase.from('playlists').select('*').order('created_at', { ascending: true }),
-          supabase.from('media').select('*').order('position', { ascending: true }),
-        ]);
-
-        if (playlistError) throw playlistError;
-        if (mediaError) throw mediaError;
-
-        if (playlistRows && playlistRows.length > 0) {
-          const mediaById = new Map<string, MediaItem>();
-          for (const row of mediaRows || []) {
-            const id = String(row.id || '');
-            if (id) {
-              mediaById.set(id, mapSupabaseMediaRow(row));
-            }
-          }
-
-          const parsed = mapSupabasePlaylists(playlistRows, mediaById);
-
-          localStorage.setItem('signage_playlists', JSON.stringify(parsed));
-          window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { source: 'supabase', playlists: parsed } }));
-          return; // Supabase succeeded, no need for Drive
-        }
-      } catch {
-        // Supabase failed, try Drive
-      }
-    }
-
-    // Try Google Drive
-    const isDriveConfigured = await checkGoogleDriveConfigured();
-    if (!isDriveConfigured) return;
-
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
-      const res = await fetch('/api/drive/playlist', { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.playlists) {
-          const parsed = data.playlists as Playlist[];
-          localStorage.setItem('signage_playlists', JSON.stringify(parsed));
-          window.dispatchEvent(new CustomEvent('playlists-synced', { detail: { source: 'drive', playlists: parsed } }));
-        }
-      }
-    } catch {
-      // Silently ignore
-    }
-  })().catch(() => {});
 }
 
 export async function savePlaylists(playlists: Playlist[]): Promise<Playlist[]> {
