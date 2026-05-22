@@ -123,8 +123,8 @@ const YouTubePlaylistCard: React.FC<YouTubePlaylistCardProps> = ({
 
   useEffect(() => {
     if (isCurrentlyPlayingAny) {
-      setCurrentIndex(playingItemIndex);
-      return;
+      const timer = setTimeout(() => setCurrentIndex(playingItemIndex), 0);
+      return () => clearTimeout(timer);
     }
     if (previewItems.length <= 1) return;
     const interval = setInterval(() => {
@@ -280,7 +280,6 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
   // New playlist state
   const [newPlaylistName, setNewPlaylistName] = useState('');
 
-  const [timeTicker, setTimeTicker] = useState(Date.now());
   const [playingState, setPlayingState] = useState<{ itemId: string | null; progress: number }>({ itemId: null, progress: 0 });
   const [syncingNow, setSyncingNow] = useState(false);
 
@@ -309,7 +308,7 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
     }
 
     if (initialPlaylists.length > 0) {
-      setPlaylists(initialPlaylists);
+      const initTimer = setTimeout(() => setPlaylists(initialPlaylists), 0);
       
       // Ensure parent url and playlistsData are in sync with active playlist items
       const active = initialPlaylists.find(p => p.active);
@@ -319,15 +318,20 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
           onUpdate({ 
             youtube_url: activeItemsStr,
             youtube_playlists: JSON.stringify(initialPlaylists)
+          }).catch((error) => {
+            console.error('Failed to sync initial YouTube playlist:', error);
           });
         }
       } else {
         if (playlistsData !== JSON.stringify(initialPlaylists)) {
           onUpdate({ 
             youtube_playlists: JSON.stringify(initialPlaylists)
+          }).catch((error) => {
+            console.error('Failed to sync initial YouTube playlist:', error);
           });
         }
       }
+      return () => clearTimeout(initTimer);
     } else {
       // Seed with initial "Default YouTube Playlist" containing current youtube_url items
       const currentStreams = parseYouTubeUrls(url);
@@ -339,11 +343,15 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
         created_at: new Date().toISOString()
       };
       const initial = [defaultPlaylist];
-      setPlaylists(initial);
-      localStorage.setItem('signage_youtube_playlists', JSON.stringify(initial));
+      const initTimer = setTimeout(() => setPlaylists(initial), 0);
       onUpdate({
         youtube_playlists: JSON.stringify(initial)
+      }).then(() => {
+        localStorage.setItem('signage_youtube_playlists', JSON.stringify(initial));
+      }).catch((error) => {
+        console.error('Failed to sync default YouTube playlist:', error);
       });
+      return () => clearTimeout(initTimer);
     }
   }, []);
 
@@ -394,9 +402,6 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
 
       if (modified) {
         setPlaylists(updatedPlaylists);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('signage_youtube_playlists', JSON.stringify(updatedPlaylists));
-        }
         
         // Sync active playlist items to parent url
         const activePlaylist = updatedPlaylists.find(p => p.active);
@@ -404,10 +409,18 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
           onUpdate({ 
             youtube_url: JSON.stringify(activePlaylist.items),
             youtube_playlists: JSON.stringify(updatedPlaylists)
+          }).then(() => {
+            localStorage.setItem('signage_youtube_playlists', JSON.stringify(updatedPlaylists));
+          }).catch((error) => {
+            console.error('Failed to sync YouTube titles:', error);
           });
         } else {
           onUpdate({
             youtube_playlists: JSON.stringify(updatedPlaylists)
+          }).then(() => {
+            localStorage.setItem('signage_youtube_playlists', JSON.stringify(updatedPlaylists));
+          }).catch((error) => {
+            console.error('Failed to sync YouTube titles:', error);
           });
         }
       }
@@ -466,24 +479,20 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
     // 3. Save and set playlists if changed
     if (playlistsChanged) {
       setPlaylists(currentPlaylists);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('signage_youtube_playlists', JSON.stringify(currentPlaylists));
-      }
       
       // If the change came from a direct URL update (and not playlistsData update),
       // sync the updated playlists back to the parent.
       if (!playlistsDataChanged) {
-        onUpdate({ youtube_playlists: JSON.stringify(currentPlaylists) });
+        onUpdate({ youtube_playlists: JSON.stringify(currentPlaylists) }).then(() => {
+          localStorage.setItem('signage_youtube_playlists', JSON.stringify(currentPlaylists));
+        }).catch((error) => {
+          console.error('Failed to sync external YouTube changes:', error);
+        });
+      } else {
+        localStorage.setItem('signage_youtube_playlists', JSON.stringify(currentPlaylists));
       }
     }
   }, [url, playlistsData, playlists]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTimeTicker(Date.now());
-    }, 200);
-    return () => clearInterval(interval);
-  }, []);
 
   // Broadcast channel for signage play progress synchronization
   useEffect(() => {
@@ -523,25 +532,33 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
       selectedPlaylist.items.forEach(item => {
         initialInputs[item.id] = item.url;
       });
-      setInputValues(initialInputs);
+      const timer = setTimeout(() => setInputValues(initialInputs), 0);
+      return () => clearTimeout(timer);
     }
   }, [selectedPlaylistId, selectedPlaylist?.id]);
 
-  const savePlaylistsState = (updatedPlaylists: YouTubePlaylist[]) => {
+  const savePlaylistsState = async (updatedPlaylists: YouTubePlaylist[]) => {
     setPlaylists(updatedPlaylists);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('signage_youtube_playlists', JSON.stringify(updatedPlaylists));
-    }
+
     const activePlaylist = updatedPlaylists.find(p => p.active);
-    if (activePlaylist) {
-      onUpdate({ 
-        youtube_url: JSON.stringify(activePlaylist.items),
-        youtube_playlists: JSON.stringify(updatedPlaylists)
-      });
-    } else {
-      onUpdate({
-        youtube_playlists: JSON.stringify(updatedPlaylists)
-      });
+
+    try {
+      if (activePlaylist) {
+        await onUpdate({ 
+          youtube_url: JSON.stringify(activePlaylist.items),
+          youtube_playlists: JSON.stringify(updatedPlaylists)
+        });
+      } else {
+        await onUpdate({
+          youtube_playlists: JSON.stringify(updatedPlaylists)
+        });
+      }
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('signage_youtube_playlists', JSON.stringify(updatedPlaylists));
+      }
+    } catch (error) {
+      console.error('Failed to sync YouTube playlists:', error);
     }
   };
 
@@ -589,7 +606,7 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
     const newUrl = inputValues[id] || '';
     
     // Save locally first to ensure immediate feedback
-    let updated = items.map(item => {
+    const updated = items.map(item => {
       if (item.id === id) {
         const titleVal = item.url === newUrl ? item.title : undefined;
         return { ...item, url: newUrl, title: titleVal };
@@ -668,7 +685,7 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
   };
 
   const handleAddItem = () => {
-    const newId = `yt-${Date.now()}`;
+    const newId = `yt-${crypto.randomUUID()}`;
     const updated = [
       ...items,
       { id: newId, url: '', enabled: true }

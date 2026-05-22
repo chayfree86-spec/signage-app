@@ -83,6 +83,20 @@ const DEFAULT_SETTINGS: SignageSettings = {
 const SETTINGS_STORAGE_KEY = 'signage_settings';
 const SETTINGS_LAST_LOCAL_WRITE_KEY = 'signage_settings_last_local_write';
 const SETTINGS_CLOUD_OVERWRITE_GRACE_MS = 10000;
+const CONTENT_UPDATE_CHANNEL = 'signage_content_updates';
+
+function broadcastContentUpdate(type: 'settings' | 'playlists', payload: unknown): void {
+  if (typeof window === 'undefined') return;
+
+  const message = { type, payload, timestamp: Date.now() };
+  window.dispatchEvent(new CustomEvent('signage-content-updated', { detail: message }));
+
+  if ('BroadcastChannel' in window) {
+    const channel = new window.BroadcastChannel(CONTENT_UPDATE_CHANNEL);
+    channel.postMessage(message);
+    channel.close();
+  }
+}
 
 function readLocalSettingsSnapshot(): SignageSettings {
   if (typeof window === 'undefined') return DEFAULT_SETTINGS;
@@ -312,27 +326,36 @@ export async function updateSettings(settings: Partial<SignageSettings>): Promis
   const current = readLocalSettingsSnapshot();
   const updated = { ...current, ...settings };
 
-  if (typeof window !== 'undefined') {
-    writeLocalSettingsSnapshot(updated);
+  let serverSynced = false;
+
+  try {
+    serverSynced = await syncSettingsToSupabase(updated) || serverSynced;
+  } catch (error) {
+    console.error('Settings Supabase sync failed:', error);
   }
 
-  const syncResults = await Promise.allSettled([
-    syncSettingsToSupabase(updated),
-    syncSettingsToDrive(updated),
-  ]);
+  try {
+    serverSynced = await syncSettingsToDrive(updated) || serverSynced;
+  } catch (error) {
+    console.error('Settings Drive sync failed:', error);
+  }
 
-  for (const result of syncResults) {
-    if (result.status === 'rejected') {
-      console.error('Settings cloud sync failed:', result.reason);
-    }
+  if (!serverSynced) {
+    console.warn('Settings server sync failed, keeping local fallback copy.');
+  }
+
+  if (typeof window !== 'undefined') {
+    writeLocalSettingsSnapshot(updated);
+    broadcastContentUpdate('settings', updated);
+    window.dispatchEvent(new CustomEvent('settings-synced-from-drive', { detail: updated }));
   }
 
   return updated;
 }
 
-async function syncSettingsToSupabase(settings: SignageSettings): Promise<void> {
+async function syncSettingsToSupabase(settings: SignageSettings): Promise<boolean> {
   const supabase = getSupabaseClient();
-  if (!supabase) return;
+  if (!supabase) return false;
 
   try {
     window.dispatchEvent(new CustomEvent('supabase-syncing'));
@@ -357,6 +380,7 @@ async function syncSettingsToSupabase(settings: SignageSettings): Promise<void> 
       if (error) throw error;
     }
     window.dispatchEvent(new CustomEvent('supabase-synced', { detail: { success: true } }));
+    return true;
   } catch (e) {
     console.error('Supabase settings update failed in db.ts:', e);
     window.dispatchEvent(new CustomEvent('supabase-synced', { detail: { success: false, error: (e as Error).message } }));
@@ -364,11 +388,11 @@ async function syncSettingsToSupabase(settings: SignageSettings): Promise<void> 
   }
 }
 
-async function syncSettingsToDrive(settings: SignageSettings): Promise<void> {
-  if (typeof window === 'undefined') return;
+async function syncSettingsToDrive(settings: SignageSettings): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
 
   const configured = await checkGoogleDriveConfigured();
-  if (!configured) return;
+  if (!configured) return false;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
@@ -385,6 +409,8 @@ async function syncSettingsToDrive(settings: SignageSettings): Promise<void> {
       const errText = await res.text().catch(() => 'Failed to sync settings to Drive');
       throw new Error(errText);
     }
+
+    return true;
   } finally {
     clearTimeout(timeoutId);
   }
@@ -1020,40 +1046,45 @@ function syncPlaylistsFromSourcesInBackground(): void {
   })().catch(() => {});
 }
 
-export function savePlaylists(playlists: Playlist[]): void {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem('signage_playlists', JSON.stringify(playlists));
+export async function savePlaylists(playlists: Playlist[]): Promise<Playlist[]> {
+  if (typeof window === 'undefined') return playlists;
 
-  (async () => {
-    const supabase = getSupabaseClient();
-    let cloudPlaylists = playlists;
+  let cloudPlaylists = playlists;
+  let serverSynced = false;
 
-    if (supabase) {
-      try {
-        window.dispatchEvent(new CustomEvent('supabase-syncing'));
-        cloudPlaylists = await syncLocalPlaylistMediaToSupabase(playlists);
-        await syncPlaylistsToSupabase(cloudPlaylists);
-
-        if (cloudPlaylists !== playlists) {
-          localStorage.setItem('signage_playlists', JSON.stringify(cloudPlaylists));
-          window.dispatchEvent(new CustomEvent('playlists-synced', {
-            detail: { source: 'supabase-media', playlists: cloudPlaylists },
-          }));
-        }
-
-        window.dispatchEvent(new CustomEvent('supabase-synced', { detail: { success: true } }));
-      } catch (err) {
-        console.error('Error syncing playlists to Supabase:', err);
-        window.dispatchEvent(new CustomEvent('supabase-synced', {
-          detail: { success: false, error: (err as Error).message },
-        }));
-      }
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      window.dispatchEvent(new CustomEvent('supabase-syncing'));
+      cloudPlaylists = await syncLocalPlaylistMediaToSupabase(playlists);
+      await syncPlaylistsToSupabase(cloudPlaylists);
+      serverSynced = true;
+      window.dispatchEvent(new CustomEvent('supabase-synced', { detail: { success: true } }));
+    } catch (err) {
+      console.error('Error syncing playlists to Supabase:', err);
+      window.dispatchEvent(new CustomEvent('supabase-synced', {
+        detail: { success: false, error: (err as Error).message },
+      }));
     }
+  }
 
-    await syncPlaylistsToDrive(cloudPlaylists);
-  })().catch(err => {
-    console.error('Error syncing playlists to cloud sources:', err);
-  });
+  try {
+    serverSynced = await syncPlaylistsToDrive(cloudPlaylists) || serverSynced;
+  } catch (err) {
+    console.error('Error syncing playlists to Google Drive:', err);
+  }
+
+  if (!serverSynced) {
+    console.warn('Playlist server sync failed, keeping local fallback copy.');
+  }
+
+  localStorage.setItem('signage_playlists', JSON.stringify(cloudPlaylists));
+  broadcastContentUpdate('playlists', cloudPlaylists);
+  window.dispatchEvent(new CustomEvent('playlists-synced', {
+    detail: { success: true, source: serverSynced ? 'server' : 'local-fallback', playlists: cloudPlaylists },
+  }));
+
+  return cloudPlaylists;
 }
 
 async function syncLocalPlaylistMediaToSupabase(playlists: Playlist[]): Promise<Playlist[]> {
@@ -1150,9 +1181,9 @@ async function syncPlaylistsToSupabase(playlists: Playlist[]): Promise<void> {
   if (upsertError) throw upsertError;
 }
 
-async function syncPlaylistsToDrive(playlists: Playlist[]): Promise<void> {
+async function syncPlaylistsToDrive(playlists: Playlist[]): Promise<boolean> {
   const configured = await checkGoogleDriveConfigured();
-  if (!configured) return;
+  if (!configured) return false;
 
   window.dispatchEvent(new CustomEvent('playlists-syncing'));
 
@@ -1172,18 +1203,20 @@ async function syncPlaylistsToDrive(playlists: Playlist[]): Promise<void> {
       window.dispatchEvent(new CustomEvent('playlists-synced', {
         detail: { success: false, error },
       }));
-      return;
+      return false;
     }
 
     const data = await res.json();
     window.dispatchEvent(new CustomEvent('playlists-synced', {
       detail: { success: true, message: data.message },
     }));
+    return true;
   } catch (err) {
     console.error('Error syncing playlists to Google Drive:', err);
     window.dispatchEvent(new CustomEvent('playlists-synced', {
       detail: { success: false, error: (err as Error).message },
     }));
+    return false;
   } finally {
     clearTimeout(timeoutId);
   }

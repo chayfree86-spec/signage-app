@@ -66,6 +66,13 @@ export default function ScreenPage() {
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('settings-synced-from-drive', handleBackgroundSync);
     window.addEventListener('playlists-synced', handleBackgroundSync);
+    window.addEventListener('signage-content-updated', handleBackgroundSync);
+
+    let contentChannel: BroadcastChannel | null = null;
+    if ('BroadcastChannel' in window) {
+      contentChannel = new window.BroadcastChannel('signage_content_updates');
+      contentChannel.addEventListener('message', handleBackgroundSync);
+    }
 
     return () => {
       clearTimeout(initialLoadTimeout);
@@ -73,6 +80,11 @@ export default function ScreenPage() {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('settings-synced-from-drive', handleBackgroundSync);
       window.removeEventListener('playlists-synced', handleBackgroundSync);
+      window.removeEventListener('signage-content-updated', handleBackgroundSync);
+      if (contentChannel) {
+        contentChannel.removeEventListener('message', handleBackgroundSync);
+        contentChannel.close();
+      }
     };
   }, []);
 

@@ -204,10 +204,14 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [playlists, mediaList, activeTransitionStyle]);
 
-  const handlePlaylistsChange = (updatedPlaylists: Playlist[]) => {
-    savePlaylists(updatedPlaylists);
+  const handlePlaylistsChange = async (updatedPlaylists: Playlist[]) => {
     applyResolvedPlaylistState(updatedPlaylists);
     resetSyncTimer();
+
+    const syncedPlaylists = await savePlaylists(updatedPlaylists);
+    if (syncedPlaylists !== updatedPlaylists) {
+      applyResolvedPlaylistState(syncedPlaylists);
+    }
   };
 
   const handleSettingsUpdate = async (partialSettings: Partial<SignageSettings>) => {
