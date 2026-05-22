@@ -7,6 +7,7 @@ import {
   Play, 
   Link2, 
   VolumeX, 
+  RotateCw,
   RotateCcw, 
   Plus, 
   Trash2, 
@@ -281,6 +282,7 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
 
   const [timeTicker, setTimeTicker] = useState(Date.now());
   const [playingState, setPlayingState] = useState<{ itemId: string | null; progress: number }>({ itemId: null, progress: 0 });
+  const [syncingNow, setSyncingNow] = useState(false);
 
   // Initialize and load playlists from props (DB) or Local Storage
   useEffect(() => {
@@ -543,6 +545,19 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
     }
   };
 
+  const handleSyncNow = async () => {
+    setSyncingNow(true);
+    try {
+      const activePlaylist = playlists.find(p => p.active);
+      await onUpdate({
+        youtube_url: JSON.stringify(activePlaylist?.items || []),
+        youtube_playlists: JSON.stringify(playlists),
+      });
+    } finally {
+      setSyncingNow(false);
+    }
+  };
+
   const saveItems = (updatedItems: YouTubeItem[]) => {
     if (!selectedPlaylistId) return;
     const updatedPlaylists = playlists.map(p => {
@@ -744,37 +759,49 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
           </div>
         </div>
 
-        {/* Enabled/Disabled Toggle */}
-        <button
-          onClick={toggleEnabled}
-          title={enabled ? 'Disable YouTube playback' : 'Enable YouTube playback'}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wide transition-all duration-300 border cursor-pointer select-none active:scale-95 ${
-            enabled
-              ? 'bg-red-500/15 border-red-500/50 text-red-300 shadow-[0_0_18px_rgba(239,68,68,0.12)]'
-              : 'bg-red-500 text-white border-red-400 shadow-[0_0_18px_rgba(239,68,68,0.18)] hover:bg-red-400'
-          }`}
-          style={
-            enabled
-              ? {
-                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                  borderColor: 'rgba(239, 68, 68, 0.5)',
-                  color: 'rgb(252, 165, 165)',
-                }
-              : {}
-          }
-        >
-          {enabled ? (
-            <>
-              <Play size={12} className="fill-current animate-pulse text-red-500" />
-              Disable YouTube
-            </>
-          ) : (
-            <>
-              <Play size={12} className="fill-current" />
-              Enable YouTube
-            </>
-          )}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleSyncNow}
+            disabled={syncingNow}
+            title="Sync YouTube playlists to Supabase and Google Drive"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wide transition-all duration-300 border border-zinc-700 bg-zinc-950/80 text-zinc-200 hover:border-red-500/50 hover:text-red-200 cursor-pointer select-none active:scale-95 disabled:opacity-60 disabled:cursor-wait"
+          >
+            <RotateCw size={12} className={syncingNow ? 'animate-spin' : ''} />
+            {syncingNow ? 'Syncing' : 'Sync YouTube'}
+          </button>
+
+          {/* Enabled/Disabled Toggle */}
+          <button
+            onClick={toggleEnabled}
+            title={enabled ? 'Disable YouTube playback' : 'Enable YouTube playback'}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wide transition-all duration-300 border cursor-pointer select-none active:scale-95 ${
+              enabled
+                ? 'bg-red-500/15 border-red-500/50 text-red-300 shadow-[0_0_18px_rgba(239,68,68,0.12)]'
+                : 'bg-red-500 text-white border-red-400 shadow-[0_0_18px_rgba(239,68,68,0.18)] hover:bg-red-400'
+            }`}
+            style={
+              enabled
+                ? {
+                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                    borderColor: 'rgba(239, 68, 68, 0.5)',
+                    color: 'rgb(252, 165, 165)',
+                  }
+                : {}
+            }
+          >
+            {enabled ? (
+              <>
+                <Play size={12} className="fill-current animate-pulse text-red-500" />
+                Disable YouTube
+              </>
+            ) : (
+              <>
+                <Play size={12} className="fill-current" />
+                Enable YouTube
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Global Mute Toggle Card */}
