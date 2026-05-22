@@ -41,7 +41,7 @@ import {
   useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { MediaItem, Playlist, uploadMediaItem, savePlaylists, deleteMediaItem } from '@/lib/db';
+import { MediaItem, Playlist, uploadMediaItem, savePlaylists, deleteMediaItem, deletePlaylistRecord } from '@/lib/db';
 
 interface PlaylistManagerProps {
   playlists: Playlist[];
@@ -728,11 +728,12 @@ export default function PlaylistManager({
     setSelectedPlaylistId(newPlay.id);
   };
 
-  const handleDeletePlaylist = (id: string) => {
+  const handleDeletePlaylist = async (id: string) => {
     if (id === 'default-playlist') {
       alert('Cannot delete the Default Playlist');
       return;
     }
+    await deletePlaylistRecord(id);
     const updated = playlists.filter(p => p.id !== id);
     onPlaylistsChange(updated);
     if (selectedPlaylistId === id) {
@@ -1214,10 +1215,22 @@ export default function PlaylistManager({
                   placeholder="e.g. Promo Weekend Loop, Festive Ambience"
                   value={newPlaylistName}
                   onChange={(e) => setNewPlaylistName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleCreatePlaylist();
+                    }
+                  }}
                   className="bg-zinc-950 border border-zinc-900 rounded-xl px-3.5 py-2.5 outline-none focus:border-yellow-500/50 transition-all text-xs text-white"
                 />
               </div>
               <div className="flex gap-2 w-full md:w-auto shrink-0">
+                <button
+                  onClick={handleCreatePlaylist}
+                  disabled={!newPlaylistName.trim()}
+                  className="flex-1 md:flex-none px-4 py-2.5 rounded-xl bg-yellow-500 text-black hover:bg-yellow-400 disabled:bg-zinc-900 disabled:text-zinc-600 disabled:border-zinc-850 border border-yellow-500 text-xs font-bold cursor-pointer disabled:cursor-not-allowed transition-colors"
+                >
+                  Create
+                </button>
                 <button
                   onClick={() => setShowCreateForm(false)}
                   className="flex-1 md:flex-none px-4 py-2.5 rounded-xl border border-zinc-900 text-zinc-450 hover:bg-zinc-900/50 text-xs font-bold cursor-pointer transition-colors"
