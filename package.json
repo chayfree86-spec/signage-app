@@ -5,9 +5,10 @@
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
     "clean": "node scripts/clean-build.mjs",
-    "build": "next build && node scripts/compat-stale-chunks.mjs",
+    "build": "next build && node scripts/compat-stale-chunks.mjs && node scripts/prepare-output.mjs && node scripts/clean-root-next.mjs",
+    "build:next": "next build && node scripts/compat-stale-chunks.mjs",
     "rebuild": "npm run clean && npm run build",
-    "start": "node server.js",
+    "start": "node output/server.js",
     "lint": "eslint"
   },
   "dependencies": {

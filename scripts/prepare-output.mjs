@@ -1,9 +1,16 @@
-import { access, cp, mkdir, readdir, rm, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readdir, rm, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const root = process.cwd();
 const standaloneDir = path.join(root, '.next', 'standalone');
 const outputDir = path.join(root, 'output');
+const skippedPublicFiles = new Set([
+  'file.svg',
+  'globe.svg',
+  'next.svg',
+  'vercel.svg',
+  'window.svg',
+]);
 
 async function copyStandaloneEntry(entry) {
   if (entry.name === '.env.local') return;
@@ -13,20 +20,10 @@ async function copyStandaloneEntry(entry) {
 }
 
 async function copyPublicEntry(entry) {
-  if (entry.name === 'live-test-media') return;
+  if (entry.name === 'live-test-media' || skippedPublicFiles.has(entry.name)) return;
   await cp(path.join(root, 'public', entry.name), path.join(outputDir, 'public', entry.name), {
     recursive: true,
   });
-}
-
-async function copyIfExists(source, destination) {
-  try {
-    await access(source);
-    await cp(source, destination, { recursive: true });
-  } catch (error) {
-    if (error?.code !== 'ENOENT') throw error;
-    console.warn(`Skipping missing optional file: ${path.relative(root, source)}`);
-  }
 }
 
 async function prepareOutputPackageJson() {
@@ -49,7 +46,6 @@ await cp(path.join(root, '.next', 'static'), path.join(outputDir, '.next', 'stat
 });
 
 await Promise.all((await readdir(path.join(root, 'public'), { withFileTypes: true })).map(copyPublicEntry));
-await copyIfExists(path.join(root, '.env.example'), path.join(outputDir, '.env.example'));
 await prepareOutputPackageJson();
 
 console.log('Prepared self-host deployment in output/.');

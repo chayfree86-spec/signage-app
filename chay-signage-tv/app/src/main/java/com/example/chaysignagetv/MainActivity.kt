@@ -2,8 +2,6 @@ package com.example.chaysignagetv
 
 import android.annotation.SuppressLint
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.view.KeyEvent
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceResponse
@@ -52,13 +50,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 
 private const val LIVE_PLAYER_URL = "https://tv.chaychaupal.com/screen"
-private const val APK_PLAYER_VERSION = "20260523-v4"
+private const val APK_PLAYER_VERSION = "20260523-v5"
 
 class MainActivity : ComponentActivity() {
 
     private var webView: WebView? = null
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private var lastLoadStartedAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,13 +75,11 @@ class MainActivity : ComponentActivity() {
                             webViewClient = object : WebViewClient() {
                                 override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                                     super.onPageStarted(view, url, favicon)
-                                    lastLoadStartedAt = System.currentTimeMillis()
                                 }
 
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     super.onPageFinished(view, url)
                                     isError = false
-                                    scheduleBlankScreenRecovery(view)
                                 }
 
                                 override fun onReceivedError(
@@ -161,12 +155,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun playerUrl(): String {
-        return "$LIVE_PLAYER_URL?apk=$APK_PLAYER_VERSION&t=${System.currentTimeMillis()}"
+        return "$LIVE_PLAYER_URL?apk=$APK_PLAYER_VERSION"
     }
 
     private fun WebView.loadPlayer() {
-        lastLoadStartedAt = System.currentTimeMillis()
-        clearCache(true)
         loadUrl(
             playerUrl(),
             mapOf(
@@ -174,36 +166,6 @@ class MainActivity : ComponentActivity() {
                 "Pragma" to "no-cache"
             )
         )
-    }
-
-    private fun scheduleBlankScreenRecovery(view: WebView?) {
-        if (view == null) return
-
-        mainHandler.postDelayed({
-            val currentView = webView ?: return@postDelayed
-            if (currentView != view) return@postDelayed
-
-            currentView.evaluateJavascript(
-                """
-                (() => {
-                  const body = document.body;
-                  const htmlLength = body ? body.innerHTML.length : 0;
-                  const hasVisibleMedia = !!document.querySelector('video, img, iframe, canvas');
-                  const text = body ? body.innerText.trim() : '';
-                  return JSON.stringify({ htmlLength, hasVisibleMedia, textLength: text.length, readyState: document.readyState });
-                })()
-                """.trimIndent()
-            ) { rawResult ->
-                val htmlLength = Regex(""""htmlLength":(\d+)""").find(rawResult ?: "")?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
-                val hasVisibleMedia = rawResult?.contains(""""hasVisibleMedia":true""") == true
-                val textLength = Regex(""""textLength":(\d+)""").find(rawResult ?: "")?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
-                val stuckForMs = System.currentTimeMillis() - lastLoadStartedAt
-
-                if (stuckForMs > 10_000 && htmlLength < 500 && !hasVisibleMedia && textLength == 0) {
-                    currentView.loadPlayer()
-                }
-            }
-        }, 12_000)
     }
 
     override fun onResume() {
@@ -218,7 +180,6 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        mainHandler.removeCallbacksAndMessages(null)
         webView?.destroy()
         webView = null
         super.onDestroy()
