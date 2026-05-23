@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { 
   fetchSettings, 
   syncScreenPlaylistsFromSupabase,
@@ -12,14 +12,31 @@ import {
 } from '@/lib/db';
 import SignagePreview from '@/components/SignagePreview';
 
+const FALLBACK_SETTINGS: SignageSettings = {
+  youtube_url: '',
+  youtube_enabled: false,
+  qr_text: '',
+  qr_enabled: false,
+  qr_position: 'bottom-right',
+  qr_size: 120,
+  slide_duration: 8,
+  mute: true,
+  youtube_active_id: '',
+  youtube_playlists: '',
+  youtube_loop: true,
+};
+
 export default function ScreenPage() {
-  const [loading, setLoading] = useState(true);
   const [mediaList, setMediaList] = useState<MediaItem[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
-  const [settings, setSettings] = useState<SignageSettings | null>(null);
+  const [settings, setSettings] = useState<SignageSettings>(FALLBACK_SETTINGS);
   const [activeTransitionStyle, setActiveTransitionStyle] = useState<string>('fade-scale');
+  const isLoadingRef = useRef(false);
 
-  const loadSignageData = async () => {
+  const loadSignageData = useCallback(async () => {
+    if (isLoadingRef.current) return;
+    isLoadingRef.current = true;
+
     try {
       const fetchedSettings = await fetchSettings();
       setSettings(fetchedSettings);
@@ -38,22 +55,22 @@ export default function ScreenPage() {
     } catch (e) {
       console.error('Failed to load signage panel data:', e);
     } finally {
-      setLoading(false);
+      isLoadingRef.current = false;
     }
-  };
+  }, []);
 
-  const loadScreenPlaylistsWithTimeout = async (): Promise<Playlist[]> => {
+  const loadScreenPlaylistsWithTimeout = useCallback(async (): Promise<Playlist[]> => {
     const timeoutResult = new Promise<Playlist[]>((resolve) => {
-      setTimeout(() => resolve(readCachedPlaylists()), 7000);
+      setTimeout(() => resolve(readCachedPlaylists()), 4000);
     });
 
     return Promise.race([
       syncScreenPlaylistsFromSupabase(),
       timeoutResult,
     ]);
-  };
+  }, []);
 
-  const readCachedPlaylists = (): Playlist[] => {
+  const readCachedPlaylists = useCallback((): Playlist[] => {
     try {
       const saved = localStorage.getItem('signage_playlists');
       if (saved) {
@@ -74,7 +91,7 @@ export default function ScreenPage() {
       created_at: new Date().toISOString(),
       transition_style: 'fade-scale',
     }];
-  };
+  }, []);
 
   useEffect(() => {
     const initialLoadTimeout = setTimeout(() => {
@@ -146,23 +163,6 @@ export default function ScreenPage() {
     return () => clearInterval(interval);
   }, [playlists, mediaList, activeTransitionStyle]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center space-y-3 select-none">
-        <div className="w-10 h-10 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-sm text-zinc-400 font-medium">Loading Signage Screen...</p>
-      </div>
-    );
-  }
-
-  if (!settings) {
-    return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center text-center p-6 text-zinc-400">
-        <p>No configuration found. Make sure you set up the controller panel first.</p>
-      </div>
-    );
-  }
-
   return (
     <SignagePreview
       mediaList={mediaList}
@@ -173,7 +173,7 @@ export default function ScreenPage() {
       transitionStyle={activeTransitionStyle}
       onUpdateSettings={async (newSettings) => {
         await updateSettings(newSettings);
-        setSettings(prev => prev ? { ...prev, ...newSettings } : null);
+        setSettings(prev => ({ ...prev, ...newSettings }));
       }}
     />
   );

@@ -52,7 +52,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 
 private const val LIVE_PLAYER_URL = "https://tv.chaychaupal.com/screen"
-private const val APK_PLAYER_VERSION = "20260523-v3"
+private const val APK_PLAYER_VERSION = "20260523-v4"
 
 class MainActivity : ComponentActivity() {
 
