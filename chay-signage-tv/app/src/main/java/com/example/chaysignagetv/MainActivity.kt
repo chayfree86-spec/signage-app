@@ -45,8 +45,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
-private const val DEFAULT_SIGNAGE_URL = "https://market-muscle-eddie-also.trycloudflare.com/screen"
-private const val SIGNAGE_URL_PREFERENCE = "signage_url_live_screen_v2"
+private const val DEFAULT_SIGNAGE_URL = "https://tv.chaychaupal.com/screen"
+private const val SIGNAGE_URL_PREFERENCE = "signage_url_live_screen_v3"
 
 class MainActivity : ComponentActivity() {
 
