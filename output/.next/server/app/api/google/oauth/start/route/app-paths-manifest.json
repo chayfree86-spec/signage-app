@@ -1,0 +1,3 @@
+{
+  "/api/google/oauth/start/route": "app/api/google/oauth/start/route.js"
+}

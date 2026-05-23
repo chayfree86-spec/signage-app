@@ -1,0 +1,3 @@
+{
+  "/api/drive/file/[fileId]/route": "app/api/drive/file/[fileId]/route.js"
+}
