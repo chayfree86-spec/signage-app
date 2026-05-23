@@ -12,6 +12,13 @@ await writeFile(
   path.join(buildDir, ".htaccess"),
   [
     "Options -MultiViews",
+    "<IfModule mod_headers.c>",
+    "  <FilesMatch \"^(index\\.html)?$\">",
+    "    Header set Cache-Control \"no-store, no-cache, must-revalidate, max-age=0\"",
+    "    Header set Pragma \"no-cache\"",
+    "    Header set Expires \"0\"",
+    "  </FilesMatch>",
+    "</IfModule>",
     "RewriteEngine On",
     "RewriteCond %{REQUEST_FILENAME} !-f",
     "RewriteCond %{REQUEST_FILENAME} !-d",
