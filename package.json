@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "clean": "node scripts/clean-build.mjs",
-    "build": "vite build && node scripts/prepare-vite-output.mjs",
+    "build": "vite build && node scripts/prepare-signage-build.mjs",
     "rebuild": "npm run clean && npm run build",
     "start": "vite preview --host 0.0.0.0",
     "lint": "eslint"

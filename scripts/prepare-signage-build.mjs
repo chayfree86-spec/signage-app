@@ -2,14 +2,14 @@ import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const root = process.cwd();
-const outputDir = path.join(root, "output");
-const screenDir = path.join(outputDir, "screen");
+const buildDir = path.join(root, "dist");
+const screenDir = path.join(buildDir, "screen");
 
 await mkdir(screenDir, { recursive: true });
-await copyFile(path.join(outputDir, "index.html"), path.join(screenDir, "index.html"));
+await copyFile(path.join(buildDir, "index.html"), path.join(screenDir, "index.html"));
 
 await writeFile(
-  path.join(outputDir, ".htaccess"),
+  path.join(buildDir, ".htaccess"),
   [
     "Options -MultiViews",
     "RewriteEngine On",
@@ -20,4 +20,4 @@ await writeFile(
   ].join("\n")
 );
 
-console.log("Prepared Vite static output for / and /screen.");
+console.log("Prepared dist for / and /screen.");

@@ -18,5 +18,4 @@ npm run lint
 
 ## Deployment
 
-Run `npm run build` and upload the contents of `output/` to the web server. The build is static and uses Supabase from the browser.
-
+Run `npm run build` and upload the contents of `dist/` to the web server. The build is static and uses Supabase from the browser.

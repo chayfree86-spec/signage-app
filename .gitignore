@@ -15,7 +15,7 @@
 
 # production
 /build
-/output/
+/dist/
 deploy-self-host/*.zip
 
 # misc
