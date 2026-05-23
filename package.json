@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
+    "clean": "node scripts/clean-build.mjs",
     "build": "next build",
+    "rebuild": "npm run clean && npm run build",
     "start": "node server.js",
     "lint": "eslint"
   },
