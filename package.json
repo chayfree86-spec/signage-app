@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
-    "build": "next build && node scripts/prepare-output.mjs",
-    "start": "node output/server.js",
+    "build": "next build",
+    "start": "node server.js",
     "lint": "eslint"
   },
   "dependencies": {

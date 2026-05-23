@@ -1,11 +1,19 @@
-const fs = require('node:fs');
-const path = require('node:path');
+const { createServer } = require('node:http');
+const next = require('next');
 
-const standaloneServer = path.join(__dirname, 'output', 'server.js');
+const port = Number.parseInt(process.env.PORT || '3000', 10);
+const hostname = process.env.HOSTNAME || '0.0.0.0';
+const dev = process.env.NODE_ENV === 'development';
+const app = next({ dev, hostname, port });
+const handle = app.getRequestHandler();
 
-if (!fs.existsSync(standaloneServer)) {
-  console.error('Missing output/server.js. Run "npm run build" before starting the app.');
+app.prepare().then(() => {
+  createServer((req, res) => {
+    handle(req, res);
+  }).listen(port, hostname, () => {
+    console.log(`Server listening at http://${hostname}:${port} in ${dev ? 'development' : 'production'} mode`);
+  });
+}).catch((error) => {
+  console.error(error);
   process.exit(1);
-}
-
-require(standaloneServer);
+});
