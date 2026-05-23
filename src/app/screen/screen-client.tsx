@@ -24,7 +24,7 @@ export default function ScreenPage() {
       const fetchedSettings = await fetchSettings();
       setSettings(fetchedSettings);
 
-      const fetchedPlaylists = await syncScreenPlaylistsFromSupabase();
+      const fetchedPlaylists = await loadScreenPlaylistsWithTimeout();
       setPlaylists(fetchedPlaylists);
 
       const activePlay = resolveActivePlaylist(fetchedPlaylists);
@@ -40,6 +40,40 @@ export default function ScreenPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadScreenPlaylistsWithTimeout = async (): Promise<Playlist[]> => {
+    const timeoutResult = new Promise<Playlist[]>((resolve) => {
+      setTimeout(() => resolve(readCachedPlaylists()), 7000);
+    });
+
+    return Promise.race([
+      syncScreenPlaylistsFromSupabase(),
+      timeoutResult,
+    ]);
+  };
+
+  const readCachedPlaylists = (): Playlist[] => {
+    try {
+      const saved = localStorage.getItem('signage_playlists');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed as Playlist[];
+      }
+    } catch {
+      // Ignore invalid local cache and use default standby playlist.
+    }
+
+    return [{
+      id: 'default-playlist',
+      name: 'Default Playlist',
+      active: true,
+      is_online: true,
+      schedule_enabled: false,
+      items: [],
+      created_at: new Date().toISOString(),
+      transition_style: 'fade-scale',
+    }];
   };
 
   useEffect(() => {

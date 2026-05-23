@@ -2,7 +2,11 @@ package com.example.chaysignagetv
 
 import android.annotation.SuppressLint
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.KeyEvent
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceResponse
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -25,7 +29,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,10 +52,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 
 private const val LIVE_PLAYER_URL = "https://tv.chaychaupal.com/screen"
+private const val APK_PLAYER_VERSION = "20260523-v3"
 
 class MainActivity : ComponentActivity() {
 
     private var webView: WebView? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var lastLoadStartedAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,10 +75,17 @@ class MainActivity : ComponentActivity() {
                         WebView(context).apply {
                             webView = this
                             setupWebView(this)
+                            webChromeClient = WebChromeClient()
                             webViewClient = object : WebViewClient() {
+                                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                                    super.onPageStarted(view, url, favicon)
+                                    lastLoadStartedAt = System.currentTimeMillis()
+                                }
+
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     super.onPageFinished(view, url)
                                     isError = false
+                                    scheduleBlankScreenRecovery(view)
                                 }
 
                                 override fun onReceivedError(
@@ -86,13 +99,25 @@ class MainActivity : ComponentActivity() {
                                         errorMessage = error?.description?.toString() ?: "Network connection error"
                                     }
                                 }
+
+                                override fun onReceivedHttpError(
+                                    view: WebView?,
+                                    request: WebResourceRequest?,
+                                    errorResponse: WebResourceResponse?
+                                ) {
+                                    super.onReceivedHttpError(view, request, errorResponse)
+                                    if (request?.isForMainFrame == true) {
+                                        isError = true
+                                        errorMessage = "HTTP ${errorResponse?.statusCode ?: "error"}"
+                                    }
+                                }
                             }
-                            loadUrl(LIVE_PLAYER_URL)
+                            loadPlayer()
                         }
                     },
                     update = { view ->
                         if (!isError && view.url.isNullOrBlank()) {
-                            view.loadUrl(LIVE_PLAYER_URL)
+                            view.loadPlayer()
                         }
                     }
                 )
@@ -102,7 +127,7 @@ class MainActivity : ComponentActivity() {
                         message = errorMessage,
                         onRetry = {
                             isError = false
-                            webView?.loadUrl(LIVE_PLAYER_URL)
+                            webView?.loadPlayer()
                         }
                     )
                 }
@@ -125,6 +150,7 @@ class MainActivity : ComponentActivity() {
             setSupportZoom(false)
             builtInZoomControls = false
             displayZoomControls = false
+            userAgentString = "$userAgentString ChaySignageTV/$APK_PLAYER_VERSION"
         }
         WebView.setWebContentsDebuggingEnabled(false)
         webView.clearCache(true)
@@ -132,6 +158,52 @@ class MainActivity : ComponentActivity() {
         webView.isScrollbarFadingEnabled = true
         webView.keepScreenOn = true
         webView.setOnLongClickListener { true }
+    }
+
+    private fun playerUrl(): String {
+        return "$LIVE_PLAYER_URL?apk=$APK_PLAYER_VERSION&t=${System.currentTimeMillis()}"
+    }
+
+    private fun WebView.loadPlayer() {
+        lastLoadStartedAt = System.currentTimeMillis()
+        clearCache(true)
+        loadUrl(
+            playerUrl(),
+            mapOf(
+                "Cache-Control" to "no-cache, no-store, max-age=0",
+                "Pragma" to "no-cache"
+            )
+        )
+    }
+
+    private fun scheduleBlankScreenRecovery(view: WebView?) {
+        if (view == null) return
+
+        mainHandler.postDelayed({
+            val currentView = webView ?: return@postDelayed
+            if (currentView != view) return@postDelayed
+
+            currentView.evaluateJavascript(
+                """
+                (() => {
+                  const body = document.body;
+                  const htmlLength = body ? body.innerHTML.length : 0;
+                  const hasVisibleMedia = !!document.querySelector('video, img, iframe, canvas');
+                  const text = body ? body.innerText.trim() : '';
+                  return JSON.stringify({ htmlLength, hasVisibleMedia, textLength: text.length, readyState: document.readyState });
+                })()
+                """.trimIndent()
+            ) { rawResult ->
+                val htmlLength = Regex(""""htmlLength":(\d+)""").find(rawResult ?: "")?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+                val hasVisibleMedia = rawResult?.contains(""""hasVisibleMedia":true""") == true
+                val textLength = Regex(""""textLength":(\d+)""").find(rawResult ?: "")?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+                val stuckForMs = System.currentTimeMillis() - lastLoadStartedAt
+
+                if (stuckForMs > 10_000 && htmlLength < 500 && !hasVisibleMedia && textLength == 0) {
+                    currentView.loadPlayer()
+                }
+            }
+        }, 12_000)
     }
 
     override fun onResume() {
@@ -146,6 +218,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null)
         webView?.destroy()
         webView = null
         super.onDestroy()
@@ -153,7 +226,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_MENU) {
-            webView?.loadUrl(LIVE_PLAYER_URL)
+            webView?.loadPlayer()
             return true
         }
         return super.onKeyDown(keyCode, event)

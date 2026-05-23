@@ -964,21 +964,15 @@ function mapSupabasePlaylists(
 
 async function cachePlaylistsForLocalPlayback(playlists: Playlist[]): Promise<Playlist[]> {
   const priorityItemId = findPriorityPlaybackItemId(playlists);
-  let priorityCached = false;
 
   const localPlaylists = await Promise.all(playlists.map(async playlist => ({
     ...playlist,
     items: await Promise.all(playlist.items.map(async item => {
-      if (!priorityCached && item.id === priorityItemId) {
-        priorityCached = true;
-        return cacheMediaForLocalPlayback(item);
-      }
-
       return getCachedMediaForLocalPlayback(item);
     })),
   })));
 
-  void cacheRemainingMediaForLocalPlayback(playlists, priorityItemId);
+  void cacheMediaForLocalPlaybackInBackground(playlists, priorityItemId);
   return localPlaylists;
 }
 
@@ -1000,15 +994,21 @@ async function getCachedMediaForLocalPlayback(item: MediaItem): Promise<MediaIte
   };
 }
 
-async function cacheRemainingMediaForLocalPlayback(
+async function cacheMediaForLocalPlaybackInBackground(
   playlists: Playlist[],
   priorityItemId?: string
 ): Promise<void> {
-  const remainingItems = playlists.flatMap(playlist =>
-    playlist.items.filter(item => item.id !== priorityItemId)
-  );
+  const allItems = playlists.flatMap(playlist => playlist.items);
+  const priorityItem = priorityItemId
+    ? allItems.find(item => item.id === priorityItemId)
+    : undefined;
+  const remainingItems = allItems.filter(item => item.id !== priorityItemId);
 
-  await Promise.all(remainingItems.map(cacheMediaForLocalPlayback));
+  if (priorityItem) {
+    await cacheMediaForLocalPlayback(priorityItem);
+  }
+
+  await Promise.allSettled(remainingItems.map(cacheMediaForLocalPlayback));
 }
 
 async function cacheMediaForLocalPlayback(item: MediaItem): Promise<MediaItem> {
