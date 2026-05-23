@@ -274,23 +274,7 @@ function syncSettingsFromSourcesInBackground(): void {
       }
     }
 
-    const isDriveConfigured = await checkGoogleDriveConfigured();
-    if (!isDriveConfigured) return;
-
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
-      const res = await fetch('/api/drive/settings', { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.settings) {
-          publishCloudSettings(data.settings);
-        }
-      }
-    } catch {
-      // Silently ignore Drive sync failures — local data is already returned
-    }
+    return;
   })().catch(() => {});
 }
 
@@ -389,31 +373,8 @@ async function syncSettingsToSupabase(settings: SignageSettings): Promise<boolea
 }
 
 async function syncSettingsToDrive(settings: SignageSettings): Promise<boolean> {
-  if (typeof window === 'undefined') return false;
-
-  const configured = await checkGoogleDriveConfigured();
-  if (!configured) return false;
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-  try {
-    const res = await fetch('/api/drive/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ settings }),
-      signal: controller.signal
-    });
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => 'Failed to sync settings to Drive');
-      throw new Error(errText);
-    }
-
-    return true;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  void settings;
+  return false;
 }
 
 export async function fetchMedia(): Promise<MediaItem[]> {
@@ -479,58 +440,8 @@ export async function fetchMedia(): Promise<MediaItem[]> {
   }
 }
 
-let cachedDriveConfigured: boolean | null = null;
-let driveConfigPromise: Promise<boolean> | null = null;
-
 export async function checkGoogleDriveConfigured(): Promise<boolean> {
-  if (typeof window === 'undefined') return false;
-
-  // Return immediately from in-memory cache (fastest path)
-  if (cachedDriveConfigured !== null) {
-    return cachedDriveConfigured;
-  }
-
-  // Check sessionStorage so the result survives React hot-reloads within a session
-  try {
-    const cached = sessionStorage.getItem('drive_configured');
-    if (cached !== null) {
-      cachedDriveConfigured = cached === 'true';
-      return cachedDriveConfigured;
-    }
-  } catch {
-    // sessionStorage not available — ignore
-  }
-
-  // Collapse concurrent calls into one fetch
-  if (driveConfigPromise) {
-    return driveConfigPromise;
-  }
-
-  driveConfigPromise = (async () => {
-    try {
-      const controller = new AbortController();
-      // Server now responds instantly (just env var check), 3s timeout is generous
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-      const res = await fetch('/api/drive/status', { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (res.ok) {
-        const data = await res.json();
-        const result = !!data.configured;
-        cachedDriveConfigured = result;
-        try { sessionStorage.setItem('drive_configured', String(result)); } catch { /* ignore */ }
-        return result;
-      }
-      cachedDriveConfigured = false;
-      return false;
-    } catch {
-      cachedDriveConfigured = false;
-      return false;
-    } finally {
-      driveConfigPromise = null;
-    }
-  })();
-
-  return driveConfigPromise;
+  return false;
 }
 
 export async function uploadMediaItem(file: File): Promise<MediaItem> {
@@ -861,24 +772,6 @@ async function fetchPlaylistsFromSupabase(): Promise<Playlist[] | null> {
 }
 
 async function fetchPlaylistsFromDrive(): Promise<Playlist[] | null> {
-  const isDriveConfigured = await checkGoogleDriveConfigured();
-  if (!isDriveConfigured) return null;
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
-    const res = await fetch('/api/drive/playlist', { signal: controller.signal });
-    clearTimeout(timeoutId);
-    if (!res.ok) return null;
-
-    const data = await res.json();
-    if (data.success && Array.isArray(data.playlists)) {
-      return data.playlists as Playlist[];
-    }
-  } catch {
-    // Local fallback handles unavailable Drive.
-  }
-
   return null;
 }
 
@@ -1215,44 +1108,8 @@ export async function deletePlaylistRecord(id: string): Promise<void> {
 }
 
 async function syncPlaylistsToDrive(playlists: Playlist[]): Promise<boolean> {
-  const configured = await checkGoogleDriveConfigured();
-  if (!configured) return false;
-
-  window.dispatchEvent(new CustomEvent('playlists-syncing'));
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-  try {
-    const res = await fetch('/api/drive/playlist', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playlists }),
-      signal: controller.signal,
-    });
-
-    if (!res.ok) {
-      const error = await res.text().catch(() => 'Failed to sync to Google Drive');
-      window.dispatchEvent(new CustomEvent('playlists-synced', {
-        detail: { success: false, error },
-      }));
-      return false;
-    }
-
-    const data = await res.json();
-    window.dispatchEvent(new CustomEvent('playlists-synced', {
-      detail: { success: true, message: data.message },
-    }));
-    return true;
-  } catch (err) {
-    console.error('Error syncing playlists to Google Drive:', err);
-    window.dispatchEvent(new CustomEvent('playlists-synced', {
-      detail: { success: false, error: (err as Error).message },
-    }));
-    return false;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  void playlists;
+  return false;
 }
 
 export function resolveActivePlaylist(playlists: Playlist[]): Playlist | null {

@@ -13,15 +13,6 @@
 # testing
 /coverage
 
-# next.js
-/out/
-/.next/
-/.next/cache/
-/.next/dev/
-/.next/diagnostics/
-/.next/trace
-/.next/*.log
-
 # production
 /build
 /output/
@@ -40,12 +31,8 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
-# vercel
-.vercel
-
 # typescript
 *.tsbuildinfo
-next-env.d.ts
 
 # credentials and google service keys
 *-ca7cf5efc3ec.json
@@ -55,6 +42,3 @@ credentials*.json
 
 # android builds / apk files
 *.apk
-
-# local test media
-/public/live-test-media/

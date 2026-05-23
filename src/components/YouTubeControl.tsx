@@ -1,5 +1,3 @@
-'use client';
-
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   ToggleLeft, 
@@ -54,6 +52,11 @@ export function getYouTubeId(url: string): string | null {
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
   const match = url.match(regExp);
   return (match && match[2].length === 11) ? match[2] : null;
+}
+
+function getFallbackYouTubeTitle(url: string): string {
+  const videoId = getYouTubeId(url);
+  return videoId ? `YouTube ${videoId}` : 'YouTube stream';
 }
 
 // Safely parse JSON array of streams or fallback to single url
@@ -379,24 +382,13 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
       const updatedPlaylists = JSON.parse(JSON.stringify(playlists)) as YouTubePlaylist[];
 
       for (const { playlistId, item } of itemsToFetch) {
-        try {
-          const res = await fetch(`/api/youtube/title?url=${encodeURIComponent(item.url)}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.title) {
-              modified = true;
-              // Find playlist and item and update
-              const p = updatedPlaylists.find(pl => pl.id === playlistId);
-              if (p) {
-                const it = p.items.find(i => i.id === item.id);
-                if (it) {
-                  it.title = data.title;
-                }
-              }
-            }
+        const p = updatedPlaylists.find(pl => pl.id === playlistId);
+        if (p) {
+          const it = p.items.find(i => i.id === item.id);
+          if (it) {
+            it.title = getFallbackYouTubeTitle(item.url);
+            modified = true;
           }
-        } catch (e) {
-          console.error("Error fetching title for", item.url, e);
         }
       }
 
@@ -620,23 +612,13 @@ export default function YouTubeControl({ url, playlistsData, enabled, mute, loop
 
     const videoId = getYouTubeId(newUrl);
     if (videoId) {
-      try {
-        const response = await fetch(`/api/youtube/title?url=${encodeURIComponent(newUrl)}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.title) {
-            const updatedWithTitle = updated.map(item => {
-              if (item.id === id) {
-                return { ...item, url: newUrl, title: data.title };
-              }
-              return item;
-            });
-            saveItems(updatedWithTitle);
-          }
+      const updatedWithTitle = updated.map(item => {
+        if (item.id === id) {
+          return { ...item, url: newUrl, title: getFallbackYouTubeTitle(newUrl) };
         }
-      } catch (err) {
-        console.error("Failed to fetch YouTube title:", err);
-      }
+        return item;
+      });
+      saveItems(updatedWithTitle);
     }
   };
 

@@ -3,23 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -H 0.0.0.0",
+    "dev": "vite --host 0.0.0.0",
     "clean": "node scripts/clean-build.mjs",
-    "build": "next build && node scripts/compat-stale-chunks.mjs && node scripts/prepare-output.mjs && node scripts/clean-root-next.mjs",
-    "build:next": "next build && node scripts/compat-stale-chunks.mjs",
+    "build": "vite build && node scripts/prepare-vite-output.mjs",
     "rebuild": "npm run clean && npm run build",
-    "start": "node output/server.js",
+    "start": "vite preview --host 0.0.0.0",
     "lint": "eslint"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
-    "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.1",
-    "googleapis": "^172.0.0",
     "lucide-react": "^1.16.0",
-    "next": "16.2.6",
     "qrcode.react": "^4.2.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -30,9 +26,10 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.0.2",
     "eslint": "^9",
-    "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite": "^8.0.14"
   }
 }

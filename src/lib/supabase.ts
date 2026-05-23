@@ -26,8 +26,8 @@ function isUsableSupabaseConfig(url?: string | null, anonKey?: string | null): u
 // Retrieve config from env or localStorage
 export function getSupabaseConfig(): SupabaseConfig | null {
   // 1. Check if we have env variables
-  const envUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const envKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const envUrl = import.meta.env.VITE_SUPABASE_URL || import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
+  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (isUsableSupabaseConfig(envUrl, envKey)) {
     return { url: envUrl.trim(), anonKey: envKey!.trim() };

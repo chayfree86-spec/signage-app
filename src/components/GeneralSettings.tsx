@@ -1,5 +1,3 @@
-'use client';
-
 import React, { useState, useEffect } from 'react';
 import { 
   Sliders, 
@@ -19,6 +17,14 @@ import {
 } from 'lucide-react';
 import { getSupabaseConfig, saveSupabaseConfig, clearSupabaseConfig } from '@/lib/supabase';
 import { fetchPlaylists, savePlaylists } from '@/lib/db';
+
+const STATIC_DRIVE_STATUS = {
+  configured: false,
+  email: null,
+  folderId: null,
+  folderName: null,
+  mode: 'supabase-only',
+};
 
 interface GeneralSettingsProps {
   slideDuration: number;
@@ -83,103 +89,25 @@ export default function GeneralSettings({
       setIsCloudConfigured(false);
     }
 
-    fetchDriveStatus();
+    void fetchDriveStatus();
   }, []);
 
   const fetchDriveStatus = async () => {
-    try {
-      setLoadingDrive(true);
-      const res = await fetch('/api/drive/status');
-      const data = await res.json();
-      setDriveConfig(data);
-    } catch (err) {
-      console.error('Failed to load Google Drive status:', err);
-    } finally {
-      setLoadingDrive(false);
-    }
+    setDriveConfig(STATIC_DRIVE_STATUS);
+    setLoadingDrive(false);
   };
 
   const handleSaveDrive = async () => {
-    if (!driveEmail.trim() || !drivePrivateKey.trim() || !driveFolderId.trim()) {
-      setDriveError('All fields (Email, Private Key, Folder ID) are required.');
-      return;
-    }
-
-    setSavingDrive(true);
-    setDriveError(null);
-    setDriveSuccess(null);
-
-    try {
-      const res = await fetch('/api/drive/configure', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: driveEmail.trim(),
-          privateKey: drivePrivateKey.trim(),
-          folderId: driveFolderId.trim(),
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok || data.error) {
-        setDriveError(data.error || 'Connection failed. Please check credentials.');
-      } else {
-        setDriveSuccess(data.message || 'Google Drive connected successfully!');
-        setDrivePrivateKey(''); // Clear for security reasons
-        setIsEditingDrive(false);
-        await fetchDriveStatus();
-        if (onReloadData) {
-          await onReloadData();
-        }
-      }
-    } catch (err: any) {
-      setDriveError(err.message || 'An error occurred during configuration.');
-    } finally {
-      setSavingDrive(false);
-    }
+    setDriveError('Google Drive setup requires a backend server. This build uses Supabase for cloud sync.');
   };
 
   const handleDisconnectDrive = async () => {
-    if (!confirm('Are you sure you want to disconnect Google Drive? Files will be saved in local browser storage (IndexedDB).')) {
-      return;
-    }
-
-    setSavingDrive(true);
-    setDriveError(null);
-    setDriveSuccess(null);
-
-    try {
-      const res = await fetch('/api/drive/configure', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'disconnect' }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok || data.error) {
-        setDriveError(data.error || 'Failed to disconnect.');
-      } else {
-        setDriveSuccess('Google Drive successfully disconnected!');
-        setDriveEmail('');
-        setDrivePrivateKey('');
-        setDriveFolderId('');
-        setIsEditingDrive(false);
-        await fetchDriveStatus();
-        if (onReloadData) {
-          await onReloadData();
-        }
-      }
-    } catch (err: any) {
-      setDriveError(err.message || 'An error occurred.');
-    } finally {
-      setSavingDrive(false);
-    }
+    setDriveConfig(STATIC_DRIVE_STATUS);
+    setDriveSuccess('Google Drive is already disabled. Supabase cloud sync remains active.');
   };
 
   const handleGoogleSignIn = () => {
-    window.location.href = '/api/google/oauth/start';
+    setDriveError('Google sign-in requires a backend server. Use Supabase cloud sync in this Vite build.');
   };
 
   const handleDurationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
