@@ -1,0 +1,16 @@
+{
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/api/drive/configure/route": "/api/drive/configure",
+  "/api/drive/file/[fileId]/route": "/api/drive/file/[fileId]",
+  "/api/drive/playlist/route": "/api/drive/playlist",
+  "/api/drive/settings/route": "/api/drive/settings",
+  "/api/drive/status/route": "/api/drive/status",
+  "/api/drive/upload/route": "/api/drive/upload",
+  "/api/google/oauth/callback/route": "/api/google/oauth/callback",
+  "/api/google/oauth/start/route": "/api/google/oauth/start",
+  "/api/youtube/title/route": "/api/youtube/title",
+  "/favicon.ico/route": "/favicon.ico",
+  "/page": "/",
+  "/screen/page": "/screen"
+}
