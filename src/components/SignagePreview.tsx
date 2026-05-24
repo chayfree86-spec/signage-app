@@ -75,10 +75,6 @@ export default function SignagePreview({
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const playerRef = useRef<any>(null);
   const lastLocalUpdateRef = useRef<number>(0);
-  const [screenViewport, setScreenViewport] = useState(() => ({
-    width: typeof window !== 'undefined' ? window.innerWidth : 1920,
-    height: typeof window !== 'undefined' ? window.innerHeight : 1080,
-  }));
   const displayIndex = activeMedia.length > 0
     ? Math.min(currentIndex, activeMedia.length - 1)
     : 0;
@@ -88,25 +84,6 @@ export default function SignagePreview({
   useEffect(() => {
     setFailedMediaIds(new Set());
   }, [activeMediaIds]);
-
-  useEffect(() => {
-    if (!pureScreenMode) return;
-
-    const updateViewport = () => {
-      setScreenViewport({
-        width: window.innerWidth || 1920,
-        height: window.innerHeight || 1080,
-      });
-    };
-
-    updateViewport();
-    window.addEventListener('resize', updateViewport);
-    window.addEventListener('orientationchange', updateViewport);
-    return () => {
-      window.removeEventListener('resize', updateViewport);
-      window.removeEventListener('orientationchange', updateViewport);
-    };
-  }, [pureScreenMode]);
 
   const markMediaFailed = (item: MediaItem) => {
     console.warn(`Skipping unavailable signage media: ${item.name}`);
@@ -659,8 +636,8 @@ export default function SignagePreview({
   // Render premium glassmorphic footer with all active QR codes side by side
   const renderQrFooter = () => {
     if (activeQrItems.length === 0) return null;
-    const compactFooter = pureScreenMode || activeQrItems.length > 3;
-    const qrSize = compactFooter ? 46 : 52;
+    const compactFooter = activeQrItems.length > 4;
+    const qrSize = compactFooter ? 52 : 58;
 
     const getQrStyle = (itemId: string) => {
       switch (itemId) {
@@ -712,13 +689,14 @@ export default function SignagePreview({
 
     return (
       <div
-        className="absolute bottom-0 inset-x-0 bg-zinc-950/85 backdrop-blur-xl border-t border-zinc-900 z-40 flex items-center justify-center animate-in slide-in-from-bottom duration-300 select-none overflow-hidden"
+        className="absolute bottom-0 inset-x-0 bg-zinc-950/85 backdrop-blur-xl border-t border-zinc-900 z-40 flex items-center justify-start animate-in slide-in-from-bottom duration-300 select-none overflow-x-auto overflow-y-hidden"
         style={{
-          height: compactFooter ? '96px' : '110px',
-          gap: 'clamp(6px, 1.4vw, 32px)',
-          paddingLeft: 'clamp(8px, 1.8vw, 24px)',
-          paddingRight: 'clamp(8px, 1.8vw, 24px)',
+          height: compactFooter ? '120px' : '132px',
+          gap: compactFooter ? '14px' : '22px',
+          paddingLeft: pureScreenMode ? 'max(28px, env(safe-area-inset-left))' : '24px',
+          paddingRight: pureScreenMode ? 'max(28px, env(safe-area-inset-right))' : '24px',
           boxSizing: 'border-box',
+          scrollbarWidth: 'none',
         }}
       >
         {activeQrItems.map((item) => {
@@ -729,10 +707,10 @@ export default function SignagePreview({
               key={item.id}
               className={`flex items-center bg-zinc-900/60 border rounded-lg hover:bg-zinc-900/80 transition-all duration-300 min-w-0 ${style.borderClass}`}
               style={{
-                flex: '1 1 0',
-                maxWidth: compactFooter ? '176px' : '240px',
-                gap: compactFooter ? '8px' : '12px',
-                padding: compactFooter ? '7px 8px' : '8px 16px',
+                flex: '0 0 auto',
+                width: compactFooter ? '218px' : '250px',
+                gap: compactFooter ? '10px' : '14px',
+                padding: compactFooter ? '10px 12px' : '12px 16px',
               }}
             >
               <div className="bg-white p-1 rounded flex items-center justify-center shadow-lg shrink-0" style={{ border: `1.5px solid ${style.fgColor}` }}>
@@ -828,6 +806,10 @@ export default function SignagePreview({
   // RENDER DYNAMIC SIGNAGE VIEW CONTENT
   // ----------------------------------------------------
   const renderSignageContent = () => {
+    const qrFooterHeight = activeQrItems.length > 0
+      ? activeQrItems.length > 4 ? '120px' : '132px'
+      : '0px';
+
     // 1. YouTube playback mode
     if (settings.youtube_enabled) {
       const youtubeItems = parseYouTubeUrls(settings.youtube_url);
@@ -863,7 +845,7 @@ export default function SignagePreview({
                 {/* Sleek yellow progress bar for the playing YouTube video */}
                 <div 
                   className="absolute inset-x-0 h-1 bg-black/40 z-30 transition-all duration-300"
-                  style={{ bottom: activeQrItems.length > 0 ? '110px' : '0px' }}
+                  style={{ bottom: qrFooterHeight }}
                 >
                   <div 
                     className="h-full bg-yellow-500 shadow-[0_0_8px_rgba(250,204,21,0.6)] transition-all duration-200 ease-linear"
@@ -949,13 +931,6 @@ export default function SignagePreview({
 
 
   // Render simulated view inside screen frame
-  const safeInset = Math.round(Math.max(8, Math.min(22, Math.min(screenViewport.width, screenViewport.height) * 0.018)));
-  const availableScreenWidth = Math.max(320, screenViewport.width - (safeInset * 2));
-  const availableScreenHeight = Math.max(180, screenViewport.height - (safeInset * 2));
-  const frameWidthByHeight = availableScreenHeight * (16 / 9);
-  const pureFrameWidth = Math.min(availableScreenWidth, frameWidthByHeight);
-  const pureFrameHeight = pureFrameWidth * (9 / 16);
-
   const playerScreen = (
     <div className="relative w-full h-full aspect-video bg-black rounded-lg overflow-hidden block shadow-2xl">
       {/* Dynamic Player Content */}
@@ -976,7 +951,7 @@ export default function SignagePreview({
   if (pureScreenMode) {
     return (
       <div
-        className="fixed inset-0 bg-black overflow-hidden flex items-center justify-center"
+        className="fixed inset-0 bg-black overflow-hidden block"
         style={{
           position: 'fixed',
           inset: 0,
@@ -984,19 +959,16 @@ export default function SignagePreview({
           height: '100vh',
           background: '#000000',
           overflow: 'hidden',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: safeInset,
+          display: 'block',
+          padding: 0,
           boxSizing: 'border-box',
         }}
       >
         <div
           className="relative bg-black overflow-hidden"
           style={{
-            width: pureFrameWidth,
-            height: pureFrameHeight,
-            aspectRatio: '16 / 9',
+            width: '100vw',
+            height: '100vh',
           }}
         >
           {/* Dynamic Player Content */}
