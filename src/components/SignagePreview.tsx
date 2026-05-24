@@ -252,6 +252,26 @@ export default function SignagePreview({
     }
   };
 
+  const keepYoutubePlaying = () => {
+    const player = playerRef.current;
+    if (!settings.youtube_enabled || !player) return;
+
+    try {
+      if (typeof player.getPlayerState === 'function') {
+        const state = player.getPlayerState();
+        // 2 = paused, 5 = cued. Resume without seeking so playback does not restart.
+        if ((state === 2 || state === 5) && typeof player.playVideo === 'function') {
+          player.playVideo();
+        }
+      } else if (typeof player.playVideo === 'function') {
+        player.playVideo();
+      }
+      syncYoutubeAudio(player);
+    } catch {
+      // Ignore transient iframe API failures.
+    }
+  };
+
   const seekToStoredLivePosition = (player: any, itemId: string) => {
     if (!isSimulatorPlayer || typeof window === 'undefined' || !player) return;
 
@@ -354,6 +374,26 @@ export default function SignagePreview({
     syncYoutubeAudio(playerRef.current);
   }, [settings.youtube_enabled, settings.mute]);
 
+  useEffect(() => {
+    const resumePlayback = () => {
+      if (settings.youtube_enabled) {
+        keepYoutubePlaying();
+      } else if (currentMedia?.type === 'video') {
+        playMediaVideo(videoRef.current);
+      }
+    };
+
+    window.addEventListener('focus', resumePlayback);
+    window.addEventListener('pageshow', resumePlayback);
+    document.addEventListener('visibilitychange', resumePlayback);
+
+    return () => {
+      window.removeEventListener('focus', resumePlayback);
+      window.removeEventListener('pageshow', resumePlayback);
+      document.removeEventListener('visibilitychange', resumePlayback);
+    };
+  }, [settings.youtube_enabled, currentMedia?.id, currentMedia?.type, settings.mute]);
+
   // Poll player progress
   useEffect(() => {
     if (!settings.youtube_enabled) {
@@ -365,6 +405,7 @@ export default function SignagePreview({
       const player = playerRef.current;
       if (player && typeof player.getCurrentTime === 'function' && typeof player.getDuration === 'function') {
         try {
+          keepYoutubePlaying();
           const current = player.getCurrentTime();
           const duration = player.getDuration();
           if (duration > 0) {
@@ -707,8 +748,13 @@ export default function SignagePreview({
   // Render premium glassmorphic footer with all active QR codes side by side
   const renderQrFooter = () => {
     if (activeQrItems.length === 0) return null;
+    const itemCount = Math.max(activeQrItems.length, 1);
     const compactFooter = activeQrItems.length > 4;
-    const qrSize = compactFooter ? 52 : 58;
+    const qrSize = compactFooter ? 'clamp(46px, 3.1vw, 68px)' : 'clamp(52px, 3.7vw, 78px)';
+    const footerHeight = compactFooter ? 'clamp(112px, 8.6vw, 154px)' : 'clamp(120px, 9vw, 164px)';
+    const footerGap = compactFooter ? 'clamp(8px, 1vw, 24px)' : 'clamp(12px, 1.25vw, 30px)';
+    const footerPadding = 'clamp(14px, 1.8vw, 42px)';
+    const cardWidthExpression = `calc((100% - (${footerGap} * ${itemCount - 1})) / ${itemCount})`;
 
     const getQrStyle = (itemId: string) => {
       switch (itemId) {
@@ -760,14 +806,13 @@ export default function SignagePreview({
 
     return (
       <div
-        className="absolute bottom-0 inset-x-0 bg-zinc-950/85 backdrop-blur-xl border-t border-zinc-900 z-40 flex items-center justify-start animate-in slide-in-from-bottom duration-300 select-none overflow-x-auto overflow-y-hidden"
+        className="absolute bottom-0 inset-x-0 bg-zinc-950/85 backdrop-blur-xl border-t border-zinc-900 z-40 flex items-center justify-center animate-in slide-in-from-bottom duration-300 select-none overflow-hidden"
         style={{
-          height: compactFooter ? '120px' : '132px',
-          gap: compactFooter ? '14px' : '22px',
-          paddingLeft: pureScreenMode ? 'max(28px, env(safe-area-inset-left))' : '24px',
-          paddingRight: pureScreenMode ? 'max(28px, env(safe-area-inset-right))' : '24px',
+          height: footerHeight,
+          gap: footerGap,
+          paddingLeft: pureScreenMode ? `max(${footerPadding}, env(safe-area-inset-left))` : footerPadding,
+          paddingRight: pureScreenMode ? `max(${footerPadding}, env(safe-area-inset-right))` : footerPadding,
           boxSizing: 'border-box',
-          scrollbarWidth: 'none',
         }}
       >
         {activeQrItems.map((item) => {
@@ -778,19 +823,22 @@ export default function SignagePreview({
               key={item.id}
               className={`flex items-center bg-zinc-900/60 border rounded-lg hover:bg-zinc-900/80 transition-all duration-300 min-w-0 ${style.borderClass}`}
               style={{
-                flex: '0 0 auto',
-                width: compactFooter ? '218px' : '250px',
-                gap: compactFooter ? '10px' : '14px',
-                padding: compactFooter ? '10px 12px' : '12px 16px',
+                flex: `1 1 ${cardWidthExpression}`,
+                width: cardWidthExpression,
+                maxWidth: compactFooter ? 'min(260px, 18vw)' : 'min(320px, 20vw)',
+                minWidth: 0,
+                gap: compactFooter ? 'clamp(7px, 0.8vw, 14px)' : 'clamp(9px, 0.9vw, 16px)',
+                padding: compactFooter ? 'clamp(8px, 0.7vw, 13px)' : 'clamp(10px, 0.85vw, 16px)',
               }}
             >
               <div className="bg-white p-1 rounded flex items-center justify-center shadow-lg shrink-0" style={{ border: `1.5px solid ${style.fgColor}` }}>
                 <QRCodeSVG
                   value={value}
-                  size={qrSize}
+                  size={64}
                   bgColor="#FFFFFF"
                   fgColor={style.fgColor}
                   level="M"
+                  style={{ width: qrSize, height: qrSize, display: 'block' }}
                 />
               </div>
               <div className="flex flex-col text-left min-w-0">
@@ -800,7 +848,7 @@ export default function SignagePreview({
                 </span>
                 <span
                   className="text-[11px] font-semibold text-white truncate pl-0.5"
-                  style={{ maxWidth: compactFooter ? '82px' : '140px' }}
+                  style={{ maxWidth: compactFooter ? 'clamp(58px, 6vw, 130px)' : 'clamp(76px, 8vw, 170px)' }}
                 >
                   {item.type === 'payment' && (item.paymentName || item.paymentUpi)}
                   {item.type === 'review' && 'Rate Us on Google'}
@@ -823,7 +871,7 @@ export default function SignagePreview({
     
     setPrevIndex(displayIndex);
     setTransitioning(true);
-    setCurrentIndex((prev) => (prev + 1) % activeMedia.length);
+    setCurrentIndex((displayIndex + 1) % activeMedia.length);
     
     setTimeout(() => {
       setTransitioning(false);
@@ -915,7 +963,7 @@ export default function SignagePreview({
   // ----------------------------------------------------
   const renderSignageContent = () => {
     const qrFooterHeight = activeQrItems.length > 0
-      ? activeQrItems.length > 4 ? '120px' : '132px'
+      ? activeQrItems.length > 4 ? 'clamp(112px, 8.6vw, 154px)' : 'clamp(120px, 9vw, 164px)'
       : '0px';
 
     // 1. YouTube playback mode
@@ -989,7 +1037,7 @@ export default function SignagePreview({
 
             return (
               <div 
-                key={item.id} 
+                key={`${item.id}-${index}-${item.url || ''}`} 
                 style={getItemTransitionStyle(index)}
               >
                 {item.type === 'video' ? (
