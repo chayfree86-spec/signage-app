@@ -393,7 +393,7 @@ export default function SignagePreview({
   }, []);
 
   useEffect(() => {
-    if (!broadcastChannelRef.current || !isScreenPlayer) return;
+    if (!isScreenPlayer && !isSimulatorPlayer) return;
 
     if (settings.youtube_enabled) {
       if (activeYoutubeItems.length > 0) {
@@ -407,7 +407,9 @@ export default function SignagePreview({
             updatedAt: Date.now(),
             type: 'youtube'
           };
-          broadcastChannelRef.current.postMessage(status);
+          if (isScreenPlayer && broadcastChannelRef.current) {
+            broadcastChannelRef.current.postMessage(status);
+          }
           try {
             window.localStorage.setItem(PLAY_STATUS_STORAGE_KEY, JSON.stringify(status));
           } catch {
@@ -429,6 +431,8 @@ export default function SignagePreview({
           const durationMs = duration * 1000;
           progressPercent = Math.min((elapsed / durationMs) * 100, 100);
         }
+        if (!isScreenPlayer || !broadcastChannelRef.current) return;
+
         broadcastChannelRef.current.postMessage({
           itemId: currentItem.id,
           progress: progressPercent,
@@ -831,6 +835,27 @@ export default function SignagePreview({
     handleNext();
   };
 
+  const playMediaVideo = (video: HTMLVideoElement | null) => {
+    if (!video) return;
+
+    video.playsInline = true;
+    video.controls = false;
+    video.autoplay = true;
+    video.muted = settings.mute;
+
+    const playPromise = video.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(() => {
+        // Some browsers block autoplay with sound. Keep signage moving by
+        // falling back to muted playback without resetting the video.
+        video.muted = true;
+        video.play().catch(() => {
+          // The next canplay/visibility tick will retry.
+        });
+      });
+    }
+  };
+
   // Handle slideshow intervals
   useEffect(() => {
     if (timerRef.current) {
@@ -868,6 +893,22 @@ export default function SignagePreview({
     currentSlideDuration,
     settings.youtube_enabled,
   ]);
+
+  useEffect(() => {
+    if (settings.youtube_enabled) return;
+    if (currentMedia?.type !== 'video') return;
+
+    const video = videoRef.current;
+    playMediaVideo(video);
+
+    const retry = window.setInterval(() => {
+      if (video && video.paused && !video.ended) {
+        playMediaVideo(video);
+      }
+    }, 1500);
+
+    return () => window.clearInterval(retry);
+  }, [displayIndex, currentMedia?.id, currentMedia?.type, settings.youtube_enabled, settings.mute]);
 
   // ----------------------------------------------------
   // RENDER DYNAMIC SIGNAGE VIEW CONTENT
@@ -958,6 +999,14 @@ export default function SignagePreview({
                       src={item.url}
                       autoPlay={isCurrent}
                       muted={settings.mute}
+                      controls={false}
+                      preload="auto"
+                      onLoadedMetadata={(event) => {
+                        if (isCurrent) playMediaVideo(event.currentTarget);
+                      }}
+                      onCanPlay={(event) => {
+                        if (isCurrent) playMediaVideo(event.currentTarget);
+                      }}
                       onEnded={isCurrent ? handleVideoEnded : undefined}
                       onError={() => markMediaFailed(item)}
                       className={`w-full h-full ${getScaleModeClass(item)}`}
