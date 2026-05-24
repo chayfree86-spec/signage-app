@@ -66,6 +66,55 @@ export interface SignageSettings {
   youtube_loop?: boolean;
 }
 
+const SUPPORTED_IMAGE_EXTENSIONS = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'webp',
+  'gif',
+  'svg',
+  'avif',
+  'bmp',
+  'ico',
+]);
+
+const SUPPORTED_VIDEO_EXTENSIONS = new Set([
+  'mp4',
+  'm4v',
+  'mov',
+  'webm',
+  'ogv',
+  'ogg',
+  'mkv',
+  'avi',
+  'wmv',
+  '3gp',
+  '3g2',
+  'mpeg',
+  'mpg',
+  'ts',
+]);
+
+function getFileExtension(filename: string): string {
+  return filename.split('.').pop()?.toLowerCase().trim() || '';
+}
+
+export function inferMediaTypeFromFile(file: File | Blob, filename = ''): MediaItem['type'] | null {
+  const mimeType = file.type?.toLowerCase() || '';
+  if (mimeType.startsWith('image/')) return 'image';
+  if (mimeType.startsWith('video/')) return 'video';
+
+  const extension = getFileExtension(filename || ('name' in file ? String((file as File).name) : ''));
+  if (SUPPORTED_IMAGE_EXTENSIONS.has(extension)) return 'image';
+  if (SUPPORTED_VIDEO_EXTENSIONS.has(extension)) return 'video';
+
+  return null;
+}
+
+export function isSupportedMediaFile(file: File): boolean {
+  return inferMediaTypeFromFile(file) !== null;
+}
+
 const DEFAULT_SETTINGS: SignageSettings = {
   youtube_url: 'https://www.youtube.com/watch?v=5qap5aO4i9A', // Beautiful ambient chill music video as default
   youtube_enabled: false,
@@ -445,7 +494,10 @@ export async function checkGoogleDriveConfigured(): Promise<boolean> {
 }
 
 export async function uploadMediaItem(file: File): Promise<MediaItem> {
-  const type: 'image' | 'video' = file.type.startsWith('video/') ? 'video' : 'image';
+  const type = inferMediaTypeFromFile(file);
+  if (!type) {
+    throw new Error(`Unsupported media file: ${file.name}`);
+  }
   const name = file.name;
   const size = file.size;
   const duplicate = await findExistingMediaForFile(file, type);
@@ -484,7 +536,10 @@ export async function uploadMediaItem(file: File): Promise<MediaItem> {
 }
 
 export async function saveUploadedMediaToSupabase(file: File): Promise<MediaItem> {
-  const type: MediaItem['type'] = file.type.startsWith('video/') ? 'video' : 'image';
+  const type = inferMediaTypeFromFile(file);
+  if (!type) {
+    throw new Error(`Unsupported media file: ${file.name}`);
+  }
   const duplicate = await findExistingMediaForFile(file, type);
   if (duplicate) {
     return duplicate;

@@ -39,7 +39,7 @@ import {
   useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { MediaItem, Playlist, uploadMediaItem, savePlaylists, deleteMediaItem, deletePlaylistRecord } from '@/lib/db';
+import { MediaItem, Playlist, uploadMediaItem, savePlaylists, deleteMediaItem, deletePlaylistRecord, isSupportedMediaFile } from '@/lib/db';
 
 interface PlaylistManagerProps {
   playlists: Playlist[];
@@ -971,11 +971,7 @@ export default function PlaylistManager({
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         
-        // Validate type
-        const isImage = file.type.startsWith('image/');
-        const isVideo = file.type.startsWith('video/');
-
-        if (!isImage && !isVideo) {
+        if (!isSupportedMediaFile(file)) {
           throw new Error(`Unsupported file type: ${file.name}`);
         }
 
@@ -1586,7 +1582,7 @@ export default function PlaylistManager({
                     onChange={handleFileChange}
                     className="hidden"
                     multiple
-                    accept="image/*,video/*"
+                    accept="image/*,video/*,.jpg,.jpeg,.png,.webp,.gif,.svg,.avif,.bmp,.ico,.mp4,.m4v,.mov,.webm,.ogv,.ogg,.mkv,.avi,.wmv,.3gp,.3g2,.mpeg,.mpg,.ts"
                   />
                 </div>
               </div>
@@ -1823,7 +1819,7 @@ export default function PlaylistManager({
                   ref={replaceFileInputRef}
                   onChange={handleUploadAndReplacePlaylistItem}
                   className="hidden"
-                  accept="image/*,video/*"
+                  accept="image/*,video/*,.jpg,.jpeg,.png,.webp,.gif,.svg,.avif,.bmp,.ico,.mp4,.m4v,.mov,.webm,.ogv,.ogg,.mkv,.avi,.wmv,.3gp,.3g2,.mpeg,.mpg,.ts"
                 />
                 <button
                   type="button"

@@ -27,7 +27,7 @@ import {
   useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { MediaItem } from '@/lib/db';
+import { MediaItem, isSupportedMediaFile } from '@/lib/db';
 
 interface MediaUploadProps {
   mediaList: MediaItem[];
@@ -218,12 +218,9 @@ export default function MediaUpload({
 
   const processFiles = async (files: FileList) => {
     setUploading(true);
-    const validFormats = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4'];
-    
-    // Check files format
-    const invalidFiles = Array.from(files).filter(f => !validFormats.includes(f.type));
+    const invalidFiles = Array.from(files).filter(file => !isSupportedMediaFile(file));
     if (invalidFiles.length > 0) {
-      setErrorMsg('Please upload only JPG, PNG, WEBP, or MP4 files.');
+      setErrorMsg('Please upload image or video files only.');
       setUploading(false);
       return;
     }
@@ -270,7 +267,7 @@ export default function MediaUpload({
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".jpg,.jpeg,.png,.webp,.mp4"
+          accept="image/*,video/*,.jpg,.jpeg,.png,.webp,.gif,.svg,.avif,.bmp,.ico,.mp4,.m4v,.mov,.webm,.ogv,.ogg,.mkv,.avi,.wmv,.3gp,.3g2,.mpeg,.mpg,.ts"
           onChange={handleFileInput}
           className="hidden"
           disabled={uploading}
@@ -296,8 +293,8 @@ export default function MediaUpload({
               </p>
             </div>
             <div className="flex gap-2 mt-2">
-              <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400 font-bold uppercase">JPG / PNG / WEBP</span>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-yellow-500 font-bold uppercase">MP4 Video</span>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400 font-bold uppercase">Images</span>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-yellow-500 font-bold uppercase">Videos</span>
             </div>
           </div>
         )}
