@@ -9,6 +9,7 @@ import {
   Playlist
 } from '@/lib/db';
 import SignagePreview from '@/components/SignagePreview';
+import { getSupabaseClient } from '@/lib/supabase';
 
 const FALLBACK_SETTINGS: SignageSettings = {
   youtube_url: '',
@@ -123,6 +124,24 @@ export default function ScreenPage() {
       contentChannel.addEventListener('message', handleBackgroundSync);
     }
 
+    const supabase = getSupabaseClient();
+    const realtimeChannel = supabase
+      ? supabase
+          .channel('tv-screen-live-updates')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, handleBackgroundSync)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'playlists' }, handleBackgroundSync)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'media' }, handleBackgroundSync)
+          .subscribe()
+      : null;
+
+    const handleResume = () => {
+      loadSignageData();
+    };
+
+    window.addEventListener('focus', handleResume);
+    window.addEventListener('online', handleResume);
+    document.addEventListener('visibilitychange', handleResume);
+
     return () => {
       clearTimeout(initialLoadTimeout);
       clearInterval(pollInterval);
@@ -134,8 +153,14 @@ export default function ScreenPage() {
         contentChannel.removeEventListener('message', handleBackgroundSync);
         contentChannel.close();
       }
+      if (supabase && realtimeChannel) {
+        supabase.removeChannel(realtimeChannel);
+      }
+      window.removeEventListener('focus', handleResume);
+      window.removeEventListener('online', handleResume);
+      document.removeEventListener('visibilitychange', handleResume);
     };
-  }, []);
+  }, [loadSignageData]);
 
   // Run Realtime Datetime Playlist Scheduler Ticker Loop (every second)
   useEffect(() => {
