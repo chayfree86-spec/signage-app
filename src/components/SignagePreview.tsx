@@ -347,7 +347,7 @@ export default function SignagePreview({
       }
       playerRef.current = null;
     };
-  }, [currentYoutubeIndex, settings.youtube_enabled, settings.youtube_url, settings.mute]);
+  }, [currentYoutubeIndex, settings.youtube_enabled, settings.youtube_url]);
 
   useEffect(() => {
     if (!settings.youtube_enabled) return;
@@ -888,14 +888,13 @@ export default function SignagePreview({
           if (videoId) {
             const originalIndex = youtubeItems.findIndex(item => item.id === currentItem.id);
             const channelNumber = originalIndex !== -1 ? originalIndex + 1 : currentYoutubeIndex + 1;
-            const muteParam = settings.mute ? '1' : '0';
-            const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=${muteParam}&controls=0&showinfo=0&rel=0&iv_load_policy=3&modestbranding=1&enablejsapi=1&playsinline=1&vq=hd1080&hd=1&origin=${typeof window !== 'undefined' ? window.location.origin : ''}`;
+            const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&controls=0&showinfo=0&rel=0&iv_load_policy=3&modestbranding=1&enablejsapi=1&playsinline=1&vq=hd1080&hd=1&origin=${typeof window !== 'undefined' ? window.location.origin : ''}`;
             
             return (
               <div className="relative w-full h-full bg-black overflow-hidden group">
                 <iframe
                   ref={iframeRef}
-                  key={`yt-${currentItem.id}-${videoId}-${muteParam}`}
+                  key={`yt-${currentItem.id}-${videoId}`}
                   src={embedUrl}
                   title={`Digital Signage YouTube Player #${channelNumber}`}
                   className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 min-w-full min-h-full w-auto h-auto aspect-video border-0"
