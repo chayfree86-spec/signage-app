@@ -6,8 +6,9 @@ import "./styles/global.css";
 
 function App() {
   const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  const searchParams = new URLSearchParams(window.location.search);
 
-  if (pathname === "/screen") {
+  if (pathname === "/screen" || searchParams.get("screen") === "1") {
     return <ScreenPage />;
   }
 

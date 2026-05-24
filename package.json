@@ -6,6 +6,7 @@
     "dev": "vite --host 0.0.0.0",
     "clean": "node scripts/clean-build.mjs",
     "build": "vite build && node scripts/prepare-signage-build.mjs",
+    "build:tv-apk": "powershell -ExecutionPolicy Bypass -File scripts/build-tv-apk.ps1",
     "rebuild": "npm run clean && npm run build",
     "start": "vite preview --host 0.0.0.0",
     "lint": "eslint"
@@ -26,6 +27,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-legacy": "^8.0.2",
     "@vitejs/plugin-react": "^6.0.2",
     "eslint": "^9",
     "tailwindcss": "^4",

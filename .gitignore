@@ -39,5 +39,7 @@ signage-app-*.json
 *.key
 credentials*.json
 
-# android builds / apk files
-*.apk
+# tv app build output and local signing key
+/tv-app/build
+/tv-app/output
+/tv-app/keystore

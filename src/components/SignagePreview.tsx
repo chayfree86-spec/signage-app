@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Tv, 
   X, 
@@ -56,7 +56,12 @@ export default function SignagePreview({
   transitionStyle = 'fade-scale',
   onUpdateSettings,
 }: SignagePreviewProps) {
-  const activeMedia = mediaList.filter(m => m.active);
+  const activeMediaIds = mediaList.filter(m => m.active).map(m => m.id).join('|');
+  const [failedMediaIds, setFailedMediaIds] = useState<Set<string>>(() => new Set());
+  const activeMedia = useMemo(
+    () => mediaList.filter(m => m.active && !failedMediaIds.has(m.id)),
+    [mediaList, failedMediaIds]
+  );
   const [currentIndex, setCurrentIndex] = useState(0);
   const [prevIndex, setPrevIndex] = useState<number | null>(null);
   const [transitioning, setTransitioning] = useState(false);
@@ -70,11 +75,48 @@ export default function SignagePreview({
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const playerRef = useRef<any>(null);
   const lastLocalUpdateRef = useRef<number>(0);
+  const [screenViewport, setScreenViewport] = useState(() => ({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1920,
+    height: typeof window !== 'undefined' ? window.innerHeight : 1080,
+  }));
   const displayIndex = activeMedia.length > 0
     ? Math.min(currentIndex, activeMedia.length - 1)
     : 0;
   const currentMedia = activeMedia[displayIndex];
   const currentSlideDuration = currentMedia?.slide_duration || settings.slide_duration;
+
+  useEffect(() => {
+    setFailedMediaIds(new Set());
+  }, [activeMediaIds]);
+
+  useEffect(() => {
+    if (!pureScreenMode) return;
+
+    const updateViewport = () => {
+      setScreenViewport({
+        width: window.innerWidth || 1920,
+        height: window.innerHeight || 1080,
+      });
+    };
+
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    window.addEventListener('orientationchange', updateViewport);
+    return () => {
+      window.removeEventListener('resize', updateViewport);
+      window.removeEventListener('orientationchange', updateViewport);
+    };
+  }, [pureScreenMode]);
+
+  const markMediaFailed = (item: MediaItem) => {
+    console.warn(`Skipping unavailable signage media: ${item.name}`);
+    setFailedMediaIds(prev => {
+      if (prev.has(item.id)) return prev;
+      const next = new Set(prev);
+      next.add(item.id);
+      return next;
+    });
+  };
 
   const activeYoutubeItems = parseYouTubeUrls(settings.youtube_url).filter(
     item => item.enabled && getYouTubeId(item.url)
@@ -179,6 +221,28 @@ export default function SignagePreview({
     }
   };
 
+  const syncYoutubeAudio = (player: any) => {
+    if (!player) return;
+
+    try {
+      if (typeof player.setPlaybackQuality === 'function') {
+        player.setPlaybackQuality('hd1080');
+      }
+      if (typeof player.setPlaybackQualityRange === 'function') {
+        player.setPlaybackQualityRange('hd1080');
+      }
+
+      if (settings.mute) {
+        if (typeof player.mute === 'function') player.mute();
+      } else {
+        if (typeof player.unMute === 'function') player.unMute();
+        if (typeof player.setVolume === 'function') player.setVolume(100);
+      }
+    } catch (e) {
+      console.error('Error syncing YouTube audio:', e);
+    }
+  };
+
   // Initialize YouTube IFrame Player API
   useEffect(() => {
     if (!settings.youtube_enabled || !iframeRef.current) return;
@@ -195,7 +259,16 @@ export default function SignagePreview({
       try {
         player = new (window as any).YT.Player(iframeRef.current, {
           events: {
+            onReady: (event: any) => {
+              syncYoutubeAudio(event.target);
+              if (event.target && typeof event.target.playVideo === 'function') {
+                event.target.playVideo();
+              }
+            },
             onStateChange: (event: any) => {
+              if (event.data === 1) { // 1 = YT.PlayerState.PLAYING
+                syncYoutubeAudio(event.target);
+              }
               if (event.data === 0) { // 0 = YT.PlayerState.ENDED
                 handleYoutubeVideoEnded();
               }
@@ -241,7 +314,12 @@ export default function SignagePreview({
       }
       playerRef.current = null;
     };
-  }, [currentYoutubeIndex, settings.youtube_enabled, settings.youtube_url]);
+  }, [currentYoutubeIndex, settings.youtube_enabled, settings.youtube_url, settings.mute]);
+
+  useEffect(() => {
+    if (!settings.youtube_enabled) return;
+    syncYoutubeAudio(playerRef.current);
+  }, [settings.youtube_enabled, settings.mute]);
 
   // Poll player progress
   useEffect(() => {
@@ -516,9 +594,73 @@ export default function SignagePreview({
     }
   };
 
+  const renderStandbyContent = (title = 'Signage Standby', message = 'No active media for display. Upload images/videos or enable YouTube stream on the control panel.') => (
+    <div
+      className="w-full h-full bg-zinc-950 flex flex-col items-center justify-center p-6 text-center select-none"
+      style={{
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        background: '#09090b',
+        color: '#ffffff',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px',
+        textAlign: 'center',
+        boxSizing: 'border-box',
+      }}
+    >
+      <div
+        style={{
+          width: 64,
+          height: 64,
+          borderRadius: 999,
+          border: '1px solid rgba(250, 204, 21, 0.35)',
+          background: 'rgba(250, 204, 21, 0.08)',
+          color: '#facc15',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: 16,
+        }}
+      >
+        <Tv size={32} />
+      </div>
+      <h3
+        className="text-sm font-bold text-white uppercase tracking-widest"
+        style={{
+          color: '#ffffff',
+          fontSize: 18,
+          fontWeight: 800,
+          margin: 0,
+          textTransform: 'uppercase',
+        }}
+      >
+        {title}
+      </h3>
+      <p
+        className="text-[11px] text-zinc-500 mt-1 max-w-[280px] mx-auto"
+        style={{
+          color: '#a1a1aa',
+          fontSize: 13,
+          lineHeight: '20px',
+          maxWidth: 360,
+          margin: '8px auto 0',
+        }}
+      >
+        {message}
+      </p>
+    </div>
+  );
+
   // Render premium glassmorphic footer with all active QR codes side by side
   const renderQrFooter = () => {
     if (activeQrItems.length === 0) return null;
+    const compactFooter = pureScreenMode || activeQrItems.length > 3;
+    const qrSize = compactFooter ? 46 : 52;
 
     const getQrStyle = (itemId: string) => {
       switch (itemId) {
@@ -569,16 +711,34 @@ export default function SignagePreview({
     };
 
     return (
-      <div className="absolute bottom-0 inset-x-0 h-[110px] bg-zinc-950/85 backdrop-blur-xl border-t border-zinc-900 z-40 flex items-center justify-center gap-8 px-6 animate-in slide-in-from-bottom duration-300 select-none">
+      <div
+        className="absolute bottom-0 inset-x-0 bg-zinc-950/85 backdrop-blur-xl border-t border-zinc-900 z-40 flex items-center justify-center animate-in slide-in-from-bottom duration-300 select-none overflow-hidden"
+        style={{
+          height: compactFooter ? '96px' : '110px',
+          gap: 'clamp(6px, 1.4vw, 32px)',
+          paddingLeft: 'clamp(8px, 1.8vw, 24px)',
+          paddingRight: 'clamp(8px, 1.8vw, 24px)',
+          boxSizing: 'border-box',
+        }}
+      >
         {activeQrItems.map((item) => {
           const value = getQrItemValue(item);
           const style = getQrStyle(item.id);
           return (
-            <div key={item.id} className={`flex items-center gap-3 bg-zinc-900/60 border rounded-xl px-4 py-2 hover:bg-zinc-900/80 transition-all duration-300 ${style.borderClass}`}>
+            <div
+              key={item.id}
+              className={`flex items-center bg-zinc-900/60 border rounded-lg hover:bg-zinc-900/80 transition-all duration-300 min-w-0 ${style.borderClass}`}
+              style={{
+                flex: '1 1 0',
+                maxWidth: compactFooter ? '176px' : '240px',
+                gap: compactFooter ? '8px' : '12px',
+                padding: compactFooter ? '7px 8px' : '8px 16px',
+              }}
+            >
               <div className="bg-white p-1 rounded flex items-center justify-center shadow-lg shrink-0" style={{ border: `1.5px solid ${style.fgColor}` }}>
                 <QRCodeSVG
                   value={value}
-                  size={52}
+                  size={qrSize}
                   bgColor="#FFFFFF"
                   fgColor={style.fgColor}
                   level="M"
@@ -589,7 +749,10 @@ export default function SignagePreview({
                   {style.icon}
                   {item.label}
                 </span>
-                <span className="text-[11px] font-semibold text-white truncate max-w-[140px] pl-0.5">
+                <span
+                  className="text-[11px] font-semibold text-white truncate pl-0.5"
+                  style={{ maxWidth: compactFooter ? '82px' : '140px' }}
+                >
                   {item.type === 'payment' && (item.paymentName || item.paymentUpi)}
                   {item.type === 'review' && 'Rate Us on Google'}
                   {item.type === 'social' && `@${item.socialUsername}`}
@@ -676,7 +839,7 @@ export default function SignagePreview({
           if (videoId) {
             const originalIndex = youtubeItems.findIndex(item => item.id === currentItem.id);
             const channelNumber = originalIndex !== -1 ? originalIndex + 1 : currentYoutubeIndex + 1;
-            const muteParam = settings.mute ? '1' : '1'; // Force mute=1 for autoplay to work
+            const muteParam = settings.mute ? '1' : '0';
             const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=${muteParam}&controls=0&showinfo=0&rel=0&iv_load_policy=3&modestbranding=1&enablejsapi=1&playsinline=1&vq=hd1080&hd=1&origin=${typeof window !== 'undefined' ? window.location.origin : ''}`;
             
             return (
@@ -714,28 +877,22 @@ export default function SignagePreview({
       }
       
       // Standby default state when list is empty
-      return (
-        <div className="w-full h-full bg-zinc-950 flex flex-col items-center justify-center p-6 text-center select-none">
-          <div className="absolute w-[200px] h-[200px] bg-yellow-500/5 blur-2xl rounded-full status-pulse" />
-          <div className="relative z-10 space-y-3">
-            <div className="p-4 rounded-full bg-zinc-900 border border-zinc-800 text-yellow-500 inline-block status-pulse shadow-lg shadow-yellow-500/5">
-              <Tv size={32} />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-white uppercase tracking-widest">No Active Streams</h3>
-              <p className="text-[11px] text-zinc-500 mt-1 max-w-[240px] mx-auto">
-                All configured streams are either disabled or invalid. Please enable at least one stream in the control panel.
-              </p>
-            </div>
-          </div>
-        </div>
+      return renderStandbyContent(
+        'No Active Streams',
+        'All configured streams are either disabled or invalid. Please enable at least one stream in the control panel.'
       );
     }
 
     // 2. Playlist media mode (Dual-render with absolute stack to prevent blank screens)
     if (activeMedia.length > 0) {
       return (
-        <div className="w-full h-full relative bg-black overflow-hidden">
+        <div
+          className="w-full h-full relative bg-black overflow-hidden"
+          style={{ position: 'relative', width: '100%', height: '100%', background: '#000000', overflow: 'hidden' }}
+        >
+          <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
+            {renderStandbyContent('Loading Media', 'Waiting for the active signage media to load.')}
+          </div>
           {activeMedia.map((item, index) => {
             const isCurrent = index === displayIndex;
             const isPrev = index === prevIndex;
@@ -754,6 +911,7 @@ export default function SignagePreview({
                       autoPlay={isCurrent}
                       muted={settings.mute}
                       onEnded={isCurrent ? handleVideoEnded : undefined}
+                      onError={() => markMediaFailed(item)}
                       className={`w-full h-full ${getScaleModeClass(item)}`}
                       style={getMediaStyle(item)}
                       playsInline
@@ -765,6 +923,7 @@ export default function SignagePreview({
                   <img
                     src={item.url}
                     alt={item.name}
+                    onError={() => markMediaFailed(item)}
                     className={`w-full h-full ${getScaleModeClass(item)}`}
                     style={getMediaStyle(item)}
                   />
@@ -784,29 +943,19 @@ export default function SignagePreview({
     }
 
     // 3. Standby default state
-    return (
-      <div className="w-full h-full bg-zinc-950 flex flex-col items-center justify-center p-6 text-center select-none">
-        {/* Dynamic yellow gradient pulse backdrop */}
-        <div className="absolute w-[200px] h-[200px] bg-yellow-500/5 blur-2xl rounded-full status-pulse" />
-        
-        <div className="relative z-10 space-y-3">
-          <div className="p-4 rounded-full bg-zinc-900 border border-zinc-800 text-yellow-500 inline-block status-pulse shadow-lg shadow-yellow-500/5">
-            <Tv size={32} />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-white uppercase tracking-widest">Signage Standby</h3>
-            <p className="text-[11px] text-zinc-500 mt-1 max-w-[240px] mx-auto">
-              No active media for display. Upload images/videos or enable YouTube stream on the left panel.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
+    return renderStandbyContent();
   };
 
 
 
   // Render simulated view inside screen frame
+  const safeInset = Math.round(Math.max(8, Math.min(22, Math.min(screenViewport.width, screenViewport.height) * 0.018)));
+  const availableScreenWidth = Math.max(320, screenViewport.width - (safeInset * 2));
+  const availableScreenHeight = Math.max(180, screenViewport.height - (safeInset * 2));
+  const frameWidthByHeight = availableScreenHeight * (16 / 9);
+  const pureFrameWidth = Math.min(availableScreenWidth, frameWidthByHeight);
+  const pureFrameHeight = pureFrameWidth * (9 / 16);
+
   const playerScreen = (
     <div className="relative w-full h-full aspect-video bg-black rounded-lg overflow-hidden block shadow-2xl">
       {/* Dynamic Player Content */}
@@ -826,12 +975,36 @@ export default function SignagePreview({
   // Return full TV frame or simulated absolute fullscreen overlay
   if (pureScreenMode) {
     return (
-      <div className="relative w-screen h-screen bg-black overflow-hidden block">
-        {/* Dynamic Player Content */}
-        {renderSignageContent()}
+      <div
+        className="fixed inset-0 bg-black overflow-hidden flex items-center justify-center"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          width: '100vw',
+          height: '100vh',
+          background: '#000000',
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: safeInset,
+          boxSizing: 'border-box',
+        }}
+      >
+        <div
+          className="relative bg-black overflow-hidden"
+          style={{
+            width: pureFrameWidth,
+            height: pureFrameHeight,
+            aspectRatio: '16 / 9',
+          }}
+        >
+          {/* Dynamic Player Content */}
+          {renderSignageContent()}
 
-        {/* Realtime Glassmorphic Multi-QR Footer */}
-        {renderQrFooter()}
+          {/* Realtime Glassmorphic Multi-QR Footer */}
+          {renderQrFooter()}
+        </div>
       </div>
     );
   }
