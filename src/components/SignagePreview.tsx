@@ -43,9 +43,12 @@ interface SignagePreviewProps {
   isFullscreen: boolean;
   onCloseFullscreen: () => void;
   pureScreenMode?: boolean;
+  playbackRole?: 'screen' | 'simulator';
   transitionStyle?: string;
   onUpdateSettings?: (settings: Partial<SignageSettings>) => Promise<void>;
 }
+
+const PLAY_STATUS_STORAGE_KEY = 'signage_live_play_status';
 
 export default function SignagePreview({
   mediaList,
@@ -53,6 +56,7 @@ export default function SignagePreview({
   isFullscreen,
   onCloseFullscreen,
   pureScreenMode = false,
+  playbackRole = pureScreenMode ? 'screen' : 'simulator',
   transitionStyle = 'fade-scale',
   onUpdateSettings,
 }: SignagePreviewProps) {
@@ -72,6 +76,8 @@ export default function SignagePreview({
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const [currentYoutubeIndex, setCurrentYoutubeIndex] = useState(0);
   const [youtubeProgress, setYoutubeProgress] = useState(0);
+  const [youtubeCurrentTime, setYoutubeCurrentTime] = useState(0);
+  const [youtubeDuration, setYoutubeDuration] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const playerRef = useRef<any>(null);
   const lastLocalUpdateRef = useRef<number>(0);
@@ -80,6 +86,8 @@ export default function SignagePreview({
     : 0;
   const currentMedia = activeMedia[displayIndex];
   const currentSlideDuration = currentMedia?.slide_duration || settings.slide_duration;
+  const isScreenPlayer = playbackRole === 'screen';
+  const isSimulatorPlayer = playbackRole === 'simulator';
 
   useEffect(() => {
     setFailedMediaIds(new Set());
@@ -152,6 +160,30 @@ export default function SignagePreview({
           lastLocalUpdateRef.current = Date.now();
           setCurrentYoutubeIndex(idx);
         }
+      } else if (isSimulatorPlayer && e.data && typeof e.data === 'object' && e.data.type === 'youtube') {
+        const itemId = e.data.itemId;
+        const youtubeItems = parseYouTubeUrls(settings.youtube_url);
+        const activeItems = youtubeItems.filter(
+          item => item.enabled && getYouTubeId(item.url)
+        );
+        const idx = activeItems.findIndex(item => item.id === itemId);
+        if (idx !== -1 && idx !== currentYoutubeIndexRef.current) {
+          setCurrentYoutubeIndex(idx);
+          return;
+        }
+
+        const player = playerRef.current;
+        const targetTime = Number(e.data.currentTime || 0);
+        if (player && targetTime > 0 && typeof player.getCurrentTime === 'function' && typeof player.seekTo === 'function') {
+          try {
+            const currentTime = Number(player.getCurrentTime() || 0);
+            if (Math.abs(currentTime - targetTime) > 3) {
+              player.seekTo(targetTime, true);
+            }
+          } catch {
+            // Ignore sync errors while the iframe is still initializing.
+          }
+        }
       }
     };
 
@@ -162,7 +194,7 @@ export default function SignagePreview({
       channel.close();
       broadcastChannelRef.current = null;
     };
-  }, [settings.youtube_url]);
+  }, [settings.youtube_url, isSimulatorPlayer]);
 
   // Handle YouTube Video End
   const handleYoutubeVideoEnded = () => {
@@ -220,6 +252,29 @@ export default function SignagePreview({
     }
   };
 
+  const seekToStoredLivePosition = (player: any, itemId: string) => {
+    if (!isSimulatorPlayer || typeof window === 'undefined' || !player) return;
+
+    try {
+      const rawStatus = window.localStorage.getItem(PLAY_STATUS_STORAGE_KEY);
+      if (!rawStatus) return;
+
+      const status = JSON.parse(rawStatus);
+      if (!status || status.type !== 'youtube' || status.itemId !== itemId) return;
+
+      const updatedAt = Number(status.updatedAt || 0);
+      const storedTime = Number(status.currentTime || 0);
+      const duration = Number(status.duration || 0);
+      if (!updatedAt || storedTime <= 0 || typeof player.seekTo !== 'function') return;
+
+      const elapsed = Math.max(0, (Date.now() - updatedAt) / 1000);
+      const targetTime = duration > 0 ? Math.min(storedTime + elapsed, Math.max(0, duration - 1)) : storedTime + elapsed;
+      player.seekTo(targetTime, true);
+    } catch {
+      // Ignore invalid cached status.
+    }
+  };
+
   // Initialize YouTube IFrame Player API
   useEffect(() => {
     if (!settings.youtube_enabled || !iframeRef.current) return;
@@ -238,6 +293,7 @@ export default function SignagePreview({
           events: {
             onReady: (event: any) => {
               syncYoutubeAudio(event.target);
+              seekToStoredLivePosition(event.target, currentItem.id);
               if (event.target && typeof event.target.playVideo === 'function') {
                 event.target.playVideo();
               }
@@ -313,6 +369,8 @@ export default function SignagePreview({
           const duration = player.getDuration();
           if (duration > 0) {
             setYoutubeProgress((current / duration) * 100);
+            setYoutubeCurrentTime(current);
+            setYoutubeDuration(duration);
           }
         } catch (e) {
           // ignore API errors before player is ready
@@ -335,17 +393,26 @@ export default function SignagePreview({
   }, []);
 
   useEffect(() => {
-    if (!broadcastChannelRef.current) return;
+    if (!broadcastChannelRef.current || !isScreenPlayer) return;
 
     if (settings.youtube_enabled) {
       if (activeYoutubeItems.length > 0) {
         const currentItem = activeYoutubeItems[currentYoutubeIndex];
         if (currentItem) {
-          broadcastChannelRef.current.postMessage({
+          const status = {
             itemId: currentItem.id,
             progress: youtubeProgress,
+            currentTime: youtubeCurrentTime,
+            duration: youtubeDuration,
+            updatedAt: Date.now(),
             type: 'youtube'
-          });
+          };
+          broadcastChannelRef.current.postMessage(status);
+          try {
+            window.localStorage.setItem(PLAY_STATUS_STORAGE_KEY, JSON.stringify(status));
+          } catch {
+            // Ignore storage errors in private/locked browser modes.
+          }
         }
       }
     } else if (activeMedia.length > 0) {
@@ -369,7 +436,7 @@ export default function SignagePreview({
         });
       }
     }
-  }, [timeTicker, displayIndex, slideStartTime, activeMedia, settings, currentYoutubeIndex, youtubeProgress, activeYoutubeItems]);
+  }, [timeTicker, displayIndex, slideStartTime, activeMedia, settings, currentYoutubeIndex, youtubeProgress, youtubeCurrentTime, youtubeDuration, activeYoutubeItems, isScreenPlayer]);
 
   // Get all active and valid QR codes for display in the footer banner
   const qrItems = parseMultipleQrTexts(settings.qr_text, settings.qr_enabled);

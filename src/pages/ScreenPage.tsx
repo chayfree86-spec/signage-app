@@ -168,6 +168,7 @@ export default function ScreenPage() {
       isFullscreen={false}
       onCloseFullscreen={() => {}}
       pureScreenMode={true}
+      playbackRole="screen"
       transitionStyle={activeTransitionStyle}
       onUpdateSettings={async (newSettings) => {
         await updateSettings(newSettings);

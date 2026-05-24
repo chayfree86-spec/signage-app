@@ -7,7 +7,9 @@ import {
   Radio,
   FileImage,
   QrCode,
-  Monitor
+  Monitor,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { 
   fetchSettings, 
@@ -33,6 +35,7 @@ export default function Home() {
   const [allUploadedMedia, setAllUploadedMedia] = useState<MediaItem[]>([]);
   const [settings, setSettings] = useState<SignageSettings | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [simulatorMuted, setSimulatorMuted] = useState(true);
   const [syncSeconds, setSyncSeconds] = useState(0);
   const [activeTab, setActiveTab] = useState<'media' | 'youtube' | 'qr' | 'system' | 'preview'>('preview');
   const [activeTransitionStyle, setActiveTransitionStyle] = useState<string>('fade-scale');
@@ -378,20 +381,34 @@ export default function Home() {
                       Real-time TV Output Simulator
                     </h2>
                   </div>
-                  <span className="text-[10px] text-zinc-500 bg-zinc-950/80 px-2.5 py-1 rounded-full border border-zinc-900 font-mono tracking-wider">
-                    16:9 SCREEN RATIO
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setSimulatorMuted(prev => !prev)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-wider transition-all ${
+                        simulatorMuted
+                          ? 'bg-zinc-950/80 border-zinc-800 text-zinc-400 hover:text-white'
+                          : 'bg-yellow-500/10 border-yellow-500/40 text-yellow-400'
+                      }`}
+                      title="Toggle simulator audio only"
+                    >
+                      {simulatorMuted ? <VolumeX size={11} /> : <Volume2 size={11} />}
+                      Simulator Audio
+                    </button>
+                    <span className="text-[10px] text-zinc-500 bg-zinc-950/80 px-2.5 py-1 rounded-full border border-zinc-900 font-mono tracking-wider">
+                      16:9 SCREEN RATIO
+                    </span>
+                  </div>
                 </div>
                 
                 {settings && (
                   <div className="w-full max-w-5xl">
                     <SignagePreview
                       mediaList={mediaList}
-                      settings={activeTab === 'preview' ? settings : { ...settings, mute: true }}
+                      settings={{ ...settings, mute: simulatorMuted }}
                       isFullscreen={isFullscreen}
                       onCloseFullscreen={closeFullscreen}
+                      playbackRole="simulator"
                       transitionStyle={activeTransitionStyle}
-                      onUpdateSettings={handleSettingsUpdate}
                     />
                   </div>
                 )}
@@ -509,9 +526,10 @@ export default function Home() {
       {isFullscreen && settings && (
         <SignagePreview
           mediaList={mediaList}
-          settings={settings}
+          settings={{ ...settings, mute: simulatorMuted }}
           isFullscreen={isFullscreen}
           onCloseFullscreen={closeFullscreen}
+          playbackRole="simulator"
           transitionStyle={activeTransitionStyle}
         />
       )}
